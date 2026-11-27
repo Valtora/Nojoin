@@ -53,6 +53,7 @@ from backend.utils.meeting_notes import (
     is_placeholder_speaker_name,
     strip_leading_title_heading,
 )
+from backend.utils.notes_progress import report_notes_progress
 from backend.utils.prompt_blocks import PromptBlock, render_prompt_blocks
 from backend.utils.speaker_name_suggestions import detect_rule_based_speaker_suggestions
 from backend.utils.transcript_parts import (
@@ -695,14 +696,19 @@ class _PartsRun:
         # The final notes, within most of the room kept for their answer.
         self.final_words = self._words(budget.merge_answer_tokens * 3 // 5)
 
-    def _ask(self, prompt: str, read: Callable[[str], T]) -> T:
-        """The answer, read; asked once more if the first cannot be read."""
+    def _ask(self, prompt: str, read: Callable[[str], T], step: str) -> T:
+        """The answer, read; asked once more if the first cannot be read.
+
+        ``step`` is what the page shows while the call runs.
+        """
+        report_notes_progress(step)
         try:
             return read(self.complete(prompt))
         except MeetingIntelligenceContractError as error:
             logger.warning(
                 "Unusable answer for long-meeting notes, asking again: %s", error
             )
+            report_notes_progress(f"{step} (retrying)")
             return read(self.complete(prompt))
 
     def _words(self, tokens: int) -> int:
@@ -745,10 +751,11 @@ class _PartsRun:
 
     def _draft(self, part: TranscriptPart, index: int) -> str:
         prompt = build_part_prompt(self.context, index, self.total, part, self.words)
+        step = f"Drafting notes, part {index} of {self.total}"
         if self.context.request is None:
-            return self._ask(prompt, _read_markdown)
+            return self._ask(prompt, _read_markdown, step)
         mapping, notes = self._ask(
-            prompt, _draft_reader(self.context.request.unresolved_speakers)
+            prompt, _draft_reader(self.context.request.unresolved_speakers), step
         )
         self.mappings.append(mapping)
         return notes
@@ -822,8 +829,16 @@ class _PartsRun:
         help then, since the prompt fitted, so the shorter answer is tried first.
         """
         words = self.final_words if final else self.words
+        step = (
+            "Combining notes"
+            if final
+            else f"Combining notes, parts {items[0].first} to {items[-1].last} "
+            f"of {self.total}"
+        )
         try:
-            return self._ask(self._merge_prompt(items, final=final, words=words), read)
+            return self._ask(
+                self._merge_prompt(items, final=final, words=words), read, step
+            )
         except ContextWindowExceededError as error:
             if not error.answer_incomplete:
                 raise
@@ -834,7 +849,9 @@ class _PartsRun:
                 words // 2,
             )
             return self._ask(
-                self._merge_prompt(items, final=final, words=words // 2), read
+                self._merge_prompt(items, final=final, words=words // 2),
+                read,
+                f"{step} (retrying a shorter answer)",
             )
 
     def _combine_group(self, group: list[_Notes]) -> list[_Notes]:

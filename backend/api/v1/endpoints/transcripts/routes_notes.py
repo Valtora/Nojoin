@@ -10,13 +10,25 @@ from sqlmodel import select
 from backend.api.deps import get_current_user, get_db
 from backend.api.params import RowId
 from backend.core.task_dispatch import dispatch_task
+from backend.models.notes_public import (
+    CancelNotesRequest,
+    GenerateNotesResponse,
+    NotesRunPublicRead,
+    notes_run_state,
+)
 from backend.models.recording import Recording, is_live_capture
 from backend.models.speaker import RecordingSpeaker
 from backend.models.transcript import TRANSCRIPTION_FAILED_NOTES_MESSAGE, Transcript
 from backend.models.user import User
 from backend.utils.canonical_pipeline import build_transcript_segments_for_read
 from backend.utils.config_manager import is_meeting_edge_enabled
-from backend.utils.generation_claim import claim_generation, generation_active
+from backend.utils.generation_claim import NOTES_RUN, generation_active
+from backend.utils.generation_run import (
+    acquire_run,
+    lock_owned_run,
+    lock_transcript,
+    retire_run,
+)
 from backend.utils.llm_config import resolve_llm_config_async
 from backend.utils.notes_templates import resolve_notes_template_async
 from backend.utils.reprocess_publication import (
@@ -143,7 +155,7 @@ async def update_notes(
     return {"notes": transcript.notes, "status": "success"}
 
 
-@router.post("/{recording_id}/notes/generate")
+@router.post("/{recording_id}/notes/generate", response_model=GenerateNotesResponse)
 async def generate_notes(
     recording_id: str,
     request: Optional[GenerateNotesRequest] = None,
@@ -175,9 +187,9 @@ async def generate_notes(
     if is_live_capture(recording):
         raise HTTPException(status_code=409, detail=NOTES_DURING_CAPTURE_MESSAGE)
 
-    stmt = select(Transcript).where(Transcript.recording_id == recording.id)
-    result = await db.execute(stmt)
-    transcript = result.scalar_one_or_none()
+    transcript = await db.run_sync(
+        lambda session: lock_transcript(session, recording.id)
+    )
 
     if transcript and transcript.transcription_failed():
         raise HTTPException(status_code=409, detail=TRANSCRIPTION_FAILED_NOTES_MESSAGE)
@@ -206,16 +218,6 @@ async def generate_notes(
         db, current_user.settings or {}, user_id=current_user.id
     )
     missing_llm_config = llm_config.missing_configuration_message()
-    if missing_llm_config:
-        transcript.notes_status = "error"
-        transcript.set_notes_error_message(missing_llm_config)
-        db.add(transcript)
-        await db.commit()
-        raise HTTPException(
-            status_code=400,
-            detail=f"{missing_llm_config}. Configure an AI provider and model in Settings.",
-        )
-
     # Resolve the requested template, if any. Resolution is done here rather
     # than in the worker so an unusable choice is a 400 the user sees at once,
     # instead of a failed job they discover minutes later.
@@ -233,22 +235,68 @@ async def generate_notes(
                 detail="Notes template not found",
             )
 
-    claim_generation(transcript, "notes_status")
-    transcript.set_notes_error_message(None)
+    transcript = await db.run_sync(
+        lambda session: acquire_run(session, recording.id, NOTES_RUN)
+    )
+    if transcript is None:
+        raise HTTPException(status_code=409, detail=NOTES_ALREADY_GENERATING_MESSAGE)
+    if missing_llm_config:
+        transcript.notes_status = "error"
+        transcript.notes_run_id = None
+        transcript.set_notes_error_message(missing_llm_config)
+        db.add(transcript)
+        await db.execute(change_sequence_bump(recording.id))
+        await db.commit()
+        raise HTTPException(
+            status_code=400,
+            detail=f"{missing_llm_config}. Configure an AI provider and model in Settings.",
+        )
     db.add(transcript)
+    await db.execute(change_sequence_bump(recording.id))
+    response = GenerateNotesResponse(**notes_run_state(transcript).model_dump())
+    run_id = str(transcript.notes_run_id)
     await db.commit()
 
     task = await dispatch_task(
         "backend.worker.tasks.generate_notes_task",
-        args=[recording.id, requested_template_id],
+        args=[recording.id, requested_template_id, run_id],
     )
     from backend.models.task import register_task_ownership
 
     await register_task_ownership(db, task.id, current_user.id)
 
-    return {
-        "status": "success",
-        "notes_status": transcript.notes_status,
-        "error_message": transcript.error_message,
-        "message": "Note generation started",
-    }
+    return response.model_dump(mode="json")
+
+
+@router.post("/{recording_id}/notes/cancel", response_model=NotesRunPublicRead)
+async def cancel_notes(
+    recording_id: str,
+    request: CancelNotesRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> NotesRunPublicRead:
+    """Retire this run under its publication lock, preserving independent edits."""
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    transcript = await db.run_sync(
+        lambda session: lock_owned_run(
+            session, recording.id, request.notes_run_id, NOTES_RUN
+        )
+    )
+    if transcript is not None:
+        retire_run(transcript, NOTES_RUN)
+        db.add(transcript)
+        await db.execute(change_sequence_bump(recording.id))
+    else:
+        transcript = await db.run_sync(
+            lambda session: lock_transcript(session, recording.id)
+        )
+        if transcript is None:
+            raise HTTPException(status_code=404, detail="Transcript not found")
+        if generation_active(transcript.notes_status, transcript.updated_at):
+            raise HTTPException(
+                status_code=409,
+                detail=notes_run_state(transcript).model_dump(mode="json"),
+            )
+    response = notes_run_state(transcript)
+    await db.commit()
+    return response

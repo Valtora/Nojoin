@@ -19,6 +19,10 @@ from backend.utils.meeting_notes import (
     MeetingEventContext,
     NotesPromptContext,
 )
+from backend.utils.notes_cancellation import (
+    NotesRunCancelled,
+    check_notes_run,
+)
 from backend.utils.speaker_name_suggestions import (
     SpeakerInferenceResult,
 )
@@ -139,6 +143,8 @@ class GeminiLLMBackend(LLMBackend):
                         model_list.append(name)
 
             return sorted(model_list)
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: listing is advisory; an unreachable provider lists nothing
             logger.error(f"Gemini API error (list models): {e}")
             return []
@@ -179,6 +185,7 @@ class GeminiLLMBackend(LLMBackend):
             else {}
         )
         try:
+            check_notes_run()
             response = self.client.models.generate_content(
                 model=self.model,
                 contents=prompt,
@@ -186,6 +193,8 @@ class GeminiLLMBackend(LLMBackend):
             )
             text = self._extract_text_from_response(response)
             return self.parse_speaker_inference_result(text, eligible_labels)
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"Gemini API error (speaker suggestions): {e}")
             raise RuntimeError(f"Gemini API error (speaker suggestions): {e}")
@@ -236,6 +245,7 @@ class GeminiLLMBackend(LLMBackend):
                 "No Gemini model configured. Please select a model in Settings."
             )
         try:
+            check_notes_run()
             response = self.client.models.generate_content(
                 model=self.model,
                 contents=prompt,
@@ -245,6 +255,8 @@ class GeminiLLMBackend(LLMBackend):
             notes = self.finalise_meeting_notes(self.parse_notes(text))
             return notes
         except TruncatedNotesError:
+            raise
+        except NotesRunCancelled:
             raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"Gemini API error (meeting notes): {e}")
@@ -265,6 +277,7 @@ class GeminiLLMBackend(LLMBackend):
                 "No Gemini model configured. Please select a model in Settings."
             )
         try:
+            check_notes_run()
             response = self.client.models.generate_content(
                 model=self.model,
                 contents=prompt,
@@ -273,6 +286,8 @@ class GeminiLLMBackend(LLMBackend):
             text = self._extract_text_from_response(response)
             return self.parse_automatic_meeting_intelligence_result(text, request)
         except TruncatedNotesError:
+            raise
+        except NotesRunCancelled:
             raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"Gemini API error (meeting intelligence): {e}")
@@ -289,11 +304,14 @@ class GeminiLLMBackend(LLMBackend):
                 "No Gemini model configured. Please select a model in Settings."
             )
         try:
+            check_notes_run()
             response = self.client.models.generate_content(
                 model=self.model,
                 contents=prompt,
             )
             return self._extract_text_from_response(response)
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"Gemini API error (text generation): {e}")
             raise RuntimeError(f"Gemini API error (text generation): {e}")
@@ -317,11 +335,14 @@ class GeminiLLMBackend(LLMBackend):
         ]
         parts.append(genai_types.Part.from_text(text=prompt))
         try:
+            check_notes_run()
             response = self.client.models.generate_content(
                 model=self.model,
                 contents=parts,
             )
             return self._extract_text_from_response(response)
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; vision refusals are told apart, the rest become one RuntimeError
             if is_vision_unsupported_error(e):
                 raise VisionUnsupportedError(
@@ -342,6 +363,7 @@ class GeminiLLMBackend(LLMBackend):
                 "No Gemini model configured. Please select a model in Settings."
             )
         try:
+            check_notes_run()
             response = self.client.models.generate_content(
                 model=self.model,
                 contents=prompt,
@@ -353,6 +375,8 @@ class GeminiLLMBackend(LLMBackend):
             )
             text = self._extract_text_from_response(response)
             return self.parse_meeting_edge_result(text, request)
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"Gemini API error (Meeting Edge): {e}")
             raise RuntimeError(f"Gemini API error (Meeting Edge): {e}")
@@ -369,6 +393,7 @@ class GeminiLLMBackend(LLMBackend):
                 "No Gemini model configured. Please select a model in Settings."
             )
         try:
+            check_notes_run()
             response = self.client.models.generate_content(
                 model=self.model,
                 contents=prompt,
@@ -386,6 +411,8 @@ class GeminiLLMBackend(LLMBackend):
             )
             text = self._extract_text_from_response(response)
             return self.parse_meeting_analysis_result(text, request)
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"Gemini API error (meeting analysis): {e}")
             raise RuntimeError(f"Gemini API error (meeting analysis): {e}")
@@ -416,11 +443,14 @@ class GeminiLLMBackend(LLMBackend):
                 "No Gemini model configured. Please select a model in Settings."
             )
         try:
+            check_notes_run()
             response = self.client.models.generate_content(
                 model=self.model,
                 contents=contents,
             )
             return self._extract_text_from_response(response)
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"Gemini API error (chat): {e}")
             raise RuntimeError(f"Gemini API error (chat): {e}")
@@ -459,6 +489,7 @@ class GeminiLLMBackend(LLMBackend):
 
         try:
             # Automatic function calling is disabled to allow manual handling and event streaming.
+            check_notes_run()
             response_stream = self.client.models.generate_content_stream(
                 model=self.model,
                 contents=contents,
@@ -497,8 +528,12 @@ class GeminiLLMBackend(LLMBackend):
 
                     if has_text and chunk.text:
                         yield chunk.text
+                except NotesRunCancelled:
+                    raise
                 except Exception:  # noqa: BLE001 -- boundary: an empty or blocked chunk raises differently across SDK versions and carries no text either way
                     pass
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; a blocked candidate ends the stream, the rest become one RuntimeError
             logger.error(f"Gemini API error (streaming chat): {e}")
             # If it's just a property access error because of no text, ignore it
@@ -528,6 +563,7 @@ class GeminiLLMBackend(LLMBackend):
                 "No Gemini model configured. Please select a model in Settings."
             )
         try:
+            check_notes_run()
             response = self.client.models.generate_content(
                 model=self.model,
                 contents=prompt,
@@ -535,6 +571,8 @@ class GeminiLLMBackend(LLMBackend):
             text = self._extract_text_from_response(response)
             title = self.parse_title(text)
             return title
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"Gemini API error (meeting title): {e}")
             raise RuntimeError(f"Gemini API error (meeting title): {e}")
@@ -566,6 +604,8 @@ class GeminiLLMBackend(LLMBackend):
             # Simple call to list models to verify key
             self.client.models.list()
             return True
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: any failure means the key did not validate
             logger.error(f"Gemini API validation failed: {e}")
             raise ValueError(f"Gemini API validation failed: {e}")

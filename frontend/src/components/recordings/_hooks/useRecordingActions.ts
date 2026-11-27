@@ -14,6 +14,9 @@ import {
   discardRecordingCapture,
   exportAudio,
   inferSpeakers,
+  generateNotes,
+  cancelNotes,
+  notesConflictState,
   renameRecording,
   reprocessRecording,
   setRecordingTranscriptionLanguage,
@@ -26,7 +29,7 @@ import { forgetRecordingNotes } from "@/lib/notes/noteOutboxes";
 import { dispatchRecordingRemoved } from "@/lib/recordingEvents";
 import { parseServerTimestamp } from "@/lib/serverTimestamp";
 import { formatTimeZoneDate, getBrowserTimeZone, getUserTimeZone } from "@/lib/timezone";
-import { LanguageNotice, Recording, RecordingId } from "@/types";
+import { LanguageNotice, Recording, RecordingId, NotesLifecycle } from "@/types";
 
 import {
   NOTHING_TO_UNDO,
@@ -82,6 +85,8 @@ export const RECORDING_ACTION_IDS = [
   "editTranscriptLine",
   "assignTranscriptLine",
   "splitTranscriptLine",
+  "generateNotes",
+  "cancelNotes",
 ] as const;
 
 export type RecordingActionId = (typeof RECORDING_ACTION_IDS)[number];
@@ -110,6 +115,8 @@ export interface MoveToBinCallbacks extends RecordingListActionCallbacks {
 }
 
 export interface RecordingActions extends TranscriptRecordingActions {
+  generateNotes: (id: RecordingId, templateId?: number | null) => Promise<NotesLifecycle | null>;
+  cancelNotes: (id: RecordingId, notesRunId: string) => Promise<NotesLifecycle | null>;
   rename: (
     id: RecordingId,
     name: string,
@@ -276,6 +283,25 @@ export function useRecordingActions(): RecordingActions {
     };
 
     return {
+      generateNotes: async (id, templateId) => {
+        try {
+          return await generateNotes(id, templateId);
+        } catch (error: unknown) {
+          addNotification({ type: "error", message: getErrorDetail(error) ?? "Failed to generate notes. Configure an AI provider and model in Settings, then try again." });
+          return notesConflictState(error);
+        }
+      },
+      cancelNotes: async (id, notesRunId) => {
+        try {
+          return await cancelNotes(id, notesRunId);
+        } catch (error: unknown) {
+          const current = notesConflictState(error);
+          addNotification({ type: current ? "warning" : "error", message: current
+            ? "These notes have another generation running. The current run is shown."
+            : getErrorDetail(error) ?? "Failed to cancel notes. Please try again." });
+          return current;
+        }
+      },
       ...transcriptLineActions((message) => addNotification({ type: "error", message })),
       rename: async (id, name, callbacks) => {
         try {

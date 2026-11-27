@@ -345,6 +345,8 @@ A voiceprint that cannot be rebuilt, because its meeting's audio was removed or 
 - **Analytics** reports how the conversation went, measured from the transcript and audio, with an optional AI reading of what was discussed.
 - **Search** in the recordings list and **Search** and **Find & Replace** in the transcript are covered under [Recordings List](#recordings-list) and [Transcript And Playback](#transcript-and-playback).
 
+While notes generate, **Cancel** takes the place of the structure arrow beside the busy button, for **Regenerate Notes** and for the automatic notes written during processing. It keeps the notes you had, with any edits, and offers **Generate Notes** or **Regenerate Notes** again at once. A model request already under way, with the provider's own retries, may run to its end, and its answer is discarded; no further part or request starts. A meeting still processing finishes once that request returns, and you can generate new notes meanwhile. If two tabs press **Generate Notes** at once, one run starts and both show it.
+
 ### Analytics
 
 The **Analytics** tab is available in every recording state. While recording, paused, uploading, queued or processing, it shows estimated talk time, speaker share, longest turns and transcript-derived words per minute. These provisional figures refresh every three seconds while the tab is open and can change as wording and speakers settle. Words per minute uses the median utterance rate, leaving out short and overlapping speech, and needs at least five eligible utterances per speaker. **Silence**, **Talked over**, audio delivery, pitch and AI analysis say **after processing**. Playback links remain disabled until processing ends.
@@ -470,7 +472,7 @@ A hosted provider (Anthropic, OpenAI or Gemini) reads a whole meeting in one cal
 
 For long meetings, use a hosted provider, or keep Ollama as the primary and have an administrator add a hosted [secondary provider](#secondary-llm-provider), which receives any meeting too long for Ollama whole and returns notes in one call.
 
-Without one, Ollama writes notes for parts of the meeting and combines them. That takes several times as long and keeps less detail, the more so the smaller the window. Meeting Chat on such a meeting answers from the notes and the passages of the transcript most relevant to your question, so it can miss a detail a hosted provider would find, and it says so when the passages do not answer.
+Without one, Ollama writes notes for parts of the meeting and combines them. That takes several times as long and keeps less detail, the more so the smaller the window. While it runs, the **Regenerate Notes** button shows the step it is on in place of "Generating...", such as "Drafting notes, part 2 of 5" or "Combining notes" (hover it for a step too long to fit), and in the processing view while the meeting itself is still processing. A step marked "(retrying)" is a call asked again after an answer that could not be used. Meeting Chat on such a meeting answers from the notes and the passages of the transcript most relevant to your question, so it can miss a detail a hosted provider would find, and it says so when the passages do not answer.
 
 ## AI Assistant Connections (MCP)
 

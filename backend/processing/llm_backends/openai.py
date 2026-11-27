@@ -24,6 +24,10 @@ from backend.utils.meeting_notes import (
     MeetingEventContext,
     NotesPromptContext,
 )
+from backend.utils.notes_cancellation import (
+    NotesRunCancelled,
+    check_notes_run,
+)
 from backend.utils.speaker_name_suggestions import (
     SpeakerInferenceResult,
 )
@@ -80,6 +84,8 @@ class OpenAILLMBackend(LLMBackend):
                 elif "o1" in m.id:  # reasoning models
                     model_list.append(m.id)
             return sorted(model_list)
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: listing is advisory; an unreachable provider lists nothing
             logger.error(f"OpenAI API error (list models): {e}")
             return []
@@ -109,6 +115,7 @@ class OpenAILLMBackend(LLMBackend):
                 "No OpenAI model configured. Please select a model in Settings."
             )
         try:
+            check_notes_run()
             stream = self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
@@ -122,6 +129,8 @@ class OpenAILLMBackend(LLMBackend):
                     text_chunks.append(chunk.choices[0].delta.content)
             text = "".join(text_chunks)
             return self.parse_speaker_inference_result(text, eligible_labels)
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; a wrong model is told apart, the rest become one RuntimeError
             if "not a chat model" in str(e) or "404" in str(e):
                 logger.error(
@@ -179,6 +188,7 @@ class OpenAILLMBackend(LLMBackend):
                 "No OpenAI model configured. Please select a model in Settings."
             )
         try:
+            check_notes_run()
             stream = self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
@@ -199,6 +209,8 @@ class OpenAILLMBackend(LLMBackend):
             notes = self.finalise_meeting_notes(self.parse_notes(text))
             return notes
         except TruncatedNotesError:
+            raise
+        except NotesRunCancelled:
             raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; a wrong model is told apart, the rest become one RuntimeError
             if "not a chat model" in str(e) or "404" in str(e):
@@ -233,6 +245,7 @@ class OpenAILLMBackend(LLMBackend):
         if self.model.startswith("gpt") or "gpt" in self.model:
             request_kwargs["temperature"] = 0.2
         try:
+            check_notes_run()
             response = self.client.chat.completions.create(**request_kwargs)
             raise_if_output_truncated(
                 "OpenAI", getattr(response.choices[0], "finish_reason", None)
@@ -240,6 +253,8 @@ class OpenAILLMBackend(LLMBackend):
             text = response.choices[0].message.content or ""
             return self.parse_automatic_meeting_intelligence_result(text, request)
         except TruncatedNotesError:
+            raise
+        except NotesRunCancelled:
             raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; a wrong model is told apart, the rest become one RuntimeError
             if "not a chat model" in str(e) or "404" in str(e):
@@ -263,12 +278,15 @@ class OpenAILLMBackend(LLMBackend):
                 "No OpenAI model configured. Please select a model in Settings."
             )
         try:
+            check_notes_run()
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
                 timeout=timeout,
             )
             return response.choices[0].message.content or ""
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"OpenAI API error (text generation): {e}")
             raise RuntimeError(f"OpenAI API error (text generation): {e}")
@@ -295,12 +313,15 @@ class OpenAILLMBackend(LLMBackend):
         ]
         content.append({"type": "text", "text": prompt})
         try:
+            check_notes_run()
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": content}],
                 timeout=timeout,
             )
             return response.choices[0].message.content or ""
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; vision refusals are told apart, the rest become one RuntimeError
             if is_vision_unsupported_error(e):
                 raise VisionUnsupportedError(
@@ -331,10 +352,13 @@ class OpenAILLMBackend(LLMBackend):
 
         try:
             try:
+                check_notes_run()
                 response = self.client.chat.completions.create(
                     **request_kwargs,
                     response_format={"type": "json_object"},
                 )
+            except NotesRunCancelled:
+                raise
             except Exception as json_mode_error:  # noqa: BLE001 -- boundary: OpenAI-compatible endpoints reject response_format with assorted errors; the plain retry is the fallback
                 # OpenAI-compatible endpoints may reject response_format; retry
                 # without it. A live call does so only after the server refused
@@ -351,9 +375,12 @@ class OpenAILLMBackend(LLMBackend):
                     "OpenAI JSON mode failed for Meeting Edge (%s); retrying without response_format.",
                     json_mode_error,
                 )
+                check_notes_run()
                 response = self.client.chat.completions.create(**request_kwargs)
             text = response.choices[0].message.content or ""
             return self.parse_meeting_edge_result(text, request)
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; a wrong model is told apart, the rest become one RuntimeError
             if "not a chat model" in str(e) or "404" in str(e):
                 logger.error(
@@ -387,10 +414,13 @@ class OpenAILLMBackend(LLMBackend):
 
         try:
             try:
+                check_notes_run()
                 response = self.client.chat.completions.create(
                     **request_kwargs,
                     response_format={"type": "json_object"},
                 )
+            except NotesRunCancelled:
+                raise
             except Exception as json_mode_error:  # noqa: BLE001 -- boundary: OpenAI-compatible endpoints reject response_format with assorted errors; the plain retry is the fallback
                 # OpenAI-compatible endpoints may reject response_format; the
                 # prompt already mandates a bare JSON object and the parser is
@@ -399,9 +429,12 @@ class OpenAILLMBackend(LLMBackend):
                     "OpenAI JSON mode failed for meeting analysis (%s); retrying without response_format.",
                     json_mode_error,
                 )
+                check_notes_run()
                 response = self.client.chat.completions.create(**request_kwargs)
             text = response.choices[0].message.content or ""
             return self.parse_meeting_analysis_result(text, request)
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"OpenAI API error (meeting analysis): {e}")
             raise RuntimeError(f"OpenAI API error (meeting analysis): {e}")
@@ -431,10 +464,13 @@ class OpenAILLMBackend(LLMBackend):
                 "No OpenAI model configured. Please select a model in Settings."
             )
         try:
+            check_notes_run()
             response = self.client.chat.completions.create(
                 model=self.model, messages=messages, temperature=0.2, timeout=timeout
             )
             return response.choices[0].message.content
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; a wrong model is told apart, the rest become one RuntimeError
             if "not a chat model" in str(e) or "404" in str(e):
                 logger.error(
@@ -502,6 +538,7 @@ class OpenAILLMBackend(LLMBackend):
             request_kwargs["temperature"] = 0.2
 
         try:
+            check_notes_run()
             stream = self.client.chat.completions.create(**request_kwargs)
 
             tool_calls_accumulator = {}
@@ -546,6 +583,8 @@ class OpenAILLMBackend(LLMBackend):
                             "Failed to parse tool arguments for update_meeting_notes"
                         )
 
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; a wrong model is told apart, the rest become one RuntimeError
             if "not a chat model" in str(e) or "404" in str(e):
                 logger.error(
@@ -578,6 +617,7 @@ class OpenAILLMBackend(LLMBackend):
                 "No OpenAI model configured. Please select a model in Settings."
             )
         try:
+            check_notes_run()
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
@@ -586,6 +626,8 @@ class OpenAILLMBackend(LLMBackend):
             )
             title = self.parse_title(response.choices[0].message.content)
             return title
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; a wrong model is told apart, the rest become one RuntimeError
             if "not a chat model" in str(e) or "404" in str(e):
                 logger.error(
@@ -635,6 +677,8 @@ class OpenAILLMBackend(LLMBackend):
             # Simple call to list models to verify key
             self.client.models.list()
             return True
+        except NotesRunCancelled:
+            raise
         except Exception as e:  # noqa: BLE001 -- boundary: any failure means the key did not validate
             logger.error(f"OpenAI API validation failed: {e}")
             raise ValueError(f"OpenAI API validation failed: {e}")

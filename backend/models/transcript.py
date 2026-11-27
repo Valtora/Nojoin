@@ -1,4 +1,5 @@
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from uuid import UUID
 
 from sqlalchemy import JSON, BigInteger, Column, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import JSONB
@@ -71,6 +72,11 @@ class Transcript(BaseDBModel, table=True):
     notes_status: str = Field(
         default="pending"
     )  # pending, generating, completed, error
+    # The step a long meeting's notes run is on, such as "Drafting notes, part
+    # 2 of 5", while notes_status is generating; None otherwise, and while a
+    # meeting short enough for one call runs (backend.utils.notes_progress).
+    notes_progress: Optional[str] = Field(default=None, max_length=255)
+    notes_run_id: Optional[UUID] = Field(default=None)
     # Set when a document finishes parsing after the notes were generated, or
     # a note's file is switched on or off, so the notes no longer reflect what
     # notes generation would read. Only a

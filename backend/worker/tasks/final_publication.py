@@ -7,6 +7,7 @@ from sqlmodel import select
 from backend.models.recording import Recording
 from backend.models.transcript import Transcript
 from backend.utils.config_manager import config_manager
+from backend.utils.generation_run import reset_notes_after_transcription
 from backend.utils.language_notice import language_detection_record
 from backend.utils.reprocess_publication import (
     clear_previous_reprocess_state,
@@ -100,9 +101,7 @@ def persist_final_transcript(
         transcription_result, ctx.merged_config
     )
     transcript.complete_transcription()
-    transcript.set_notes_error_message(None)
-    if transcript.notes_status == "error":
-        transcript.notes_status = "pending"
+    reset_notes_after_transcription(transcript)
     session.add(transcript)
     if not staged:
         session.commit()

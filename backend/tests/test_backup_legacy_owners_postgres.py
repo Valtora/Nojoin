@@ -64,6 +64,8 @@ COLUMNS_ADDED_AFTER_BEFORE = {
     ("recordings", "first_processed_at"): "TIMESTAMP",
     ("recordings", "title_user_edited"): "BOOLEAN NOT NULL DEFAULT false",
     ("users", "legal_accepted_at"): "TIMESTAMP",
+    ("transcripts", "notes_progress"): "VARCHAR(255)",
+    ("transcripts", "notes_run_id"): "UUID",
 }
 
 

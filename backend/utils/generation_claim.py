@@ -10,8 +10,10 @@ stamps it, and the worker renews it when it starts and while it waits on a
 model, so only a lost worker's claim outlives the expiry.
 """
 
+from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, NamedTuple
+from uuid import uuid4
 
 from backend.utils.time import utc_now
 
@@ -22,6 +24,23 @@ GENERATION_CLAIM_EXPIRY = timedelta(minutes=15)
 LOST_GENERATION_MESSAGE = "Generation did not finish. Try again."
 
 GENERATING = "generating"
+
+
+class RunKind(NamedTuple):
+    status_field: str
+    run_id_field: str
+    progress_field: str
+    content_field: str
+    clear_error: Callable[[Any], None]
+
+
+NOTES_RUN = RunKind(
+    "notes_status",
+    "notes_run_id",
+    "notes_progress",
+    "notes",
+    lambda row: row.set_notes_error_message(None),
+)
 
 
 def generation_active(status: str | None, updated_at: datetime | None) -> bool:
@@ -47,12 +66,17 @@ def reported_generation_error(
     return message
 
 
-def claim_generation(row: Any, field: str) -> None:
+def claim_generation(row: Any, field: str | RunKind) -> None:
     """Mark ``field`` generating and stamp the claim, over a lost claim too.
 
     A lost claim already reads ``generating``, so writing that value again
     changes nothing the ORM would flush, and the row's ``updated_at`` would keep
     the lost run's time. Setting it here is what makes the new claim current.
     """
+    if isinstance(field, RunKind):
+        setattr(row, field.run_id_field, uuid4())
+        setattr(row, field.progress_field, None)
+        field.clear_error(row)
+        field = field.status_field
     setattr(row, field, GENERATING)
     row.updated_at = utc_now()

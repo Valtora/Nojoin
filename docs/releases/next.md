@@ -60,6 +60,8 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 - Text you type into a notes table row you have just added stays in that row. When the notes saved just after you added the row, the caret jumped to the end of the table's last cell and your text went there, and in notes that end with a table, text typed while a save was under way could be lost (#1074).
 - The **Analytics** note comparing a person with their usual delivery reads only the meetings their **Person Details** counts. It also read meetings in the bin and meetings where all their lines had moved to other speakers or their speaker was merged into another, so the meeting count behind it could run high (#985).
 - When two speakers in one meeting are the same person, the **Analytics** note comparing them with their usual delivery counts that meeting once, from all their speech in it. It counted the meeting once for each speaker, so the note could say "across 3 meetings" after two, and in the meeting you are viewing only one of the two speakers got the note (#1030).
+- While a long meeting's notes are written in parts on Ollama, **Regenerate Notes** reads the step they are on in place of "Generating...", such as "Drafting notes, part 2 of 5" or "Combining notes", and so does the processing view while the meeting is still processing (#939).
+- While notes generate, **Cancel** beside the busy button stops the run, for **Regenerate Notes** and for the automatic notes written during processing. The notes you had stay, with your edits, and **Generate Notes** is offered again at once. A model request already under way may finish, and its answer is discarded (#939).
 
 ### People, tasks and calendar
 
@@ -84,6 +86,7 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 
 - `POST /api/v1/users/me/legal-acceptance` records the signed-in user's acceptance from a browser session, and `/users/me`, the users list and both sign-in answers carry `legal_acceptance_required`. The MCP consent page shows the terms first to an account that has not accepted them (#1007).
 - `GET /api/v1/system/download-progress` answers 422 for a `model` it does not know, where it returned idle progress. Without `model`, a Nemotron or aligner download that a stopped worker left behind no longer outranks a newer preparation's progress. Two `POST /api/v1/system/models/prepare` requests sent together queue one preparation, and the second answers 409 (#971).
+- `POST /api/v1/transcripts/{id}/notes/cancel` with a `notes_run_id` ends that notes run, and answers 409 with the current run's state when another run has replaced it. While notes generate, `POST .../notes/generate` and the recording's `transcript` carry `notes_run_id` and `notes_progress` (#939).
 
 ### Deployment and dependencies
 
@@ -102,12 +105,14 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 
 - Upgrade the API and the workers together, as the upgrade commands do: a 3.2.0 worker fails on the missing `users.legal_accepted_at` column until the API has migrated (#1007).
 - To autoscale the prefork lanes, copy the `worker-cpu`, `worker-io` and `worker-parse` commands from `docker-compose.example.yml` into your `docker-compose.yml`, which otherwise keeps its fixed pools. The idle restart of `worker-gpu` needs no change (#1054).
+- Restart the workers with the API, as the upgrade commands do. A notes run under way at the upgrade is ended, and a notes task queued before it exits without writing, so its meeting offers **Generate Notes** again (#939).
 
 ## Migration
 
 <!-- Each Alembic revision by id and what it adds or changes, new or retired config keys and environment variables, and the backup format. -->
 
-- One Alembic revision runs. `ed5d42732014` adds the nullable `users.legal_accepted_at`, with no backfill, so every account except the setup account is asked to accept the terms of use at its next visit (#1007).
+- Three Alembic revisions run. `ed5d42732014` adds the nullable `users.legal_accepted_at`, with no backfill, so every account except the setup account is asked to accept the terms of use at its next visit (#1007).
+- `e3c9a7b15d42` adds the nullable `transcripts.notes_progress`, and `f1a6c9d2e743` the nullable `transcripts.notes_run_id`. The second ends any notes run still marked generating: its meeting keeps the notes it had and reads as completed, or as pending without notes (#939).
 - One environment variable is new: `NOJOIN_WORKER_IDLE_RECYCLE_MINUTES`, empty for 15 minutes and `0` for off, which `docker-compose.example.yml` passes to `worker-gpu`. An existing `docker-compose.yml` does not pass it, so the default applies until you add it to `worker-gpu`'s `environment:` block. No config key changed, and `nginx/` needs no action (#1054).
 - Backups stay in format 3 and carry each user's acceptance time. An archive made before 3.2.0 restores its users with none, so they are asked at their next visit (#1007).
 
@@ -117,6 +122,7 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 
 - Roll the schema back before the images, because the 3.1.0 API refuses to start against a revision it does not know. With no browser recording in progress and 3.2.0 still running, run `docker compose exec api alembic downgrade bb518dd1f469`, then stop the stack and start the 3.1.0 image tags.
 - The downgrade drops `users.legal_accepted_at` and every recorded acceptance, so upgrading again asks every account except the setup account once more.
+- The downgrade also drops `transcripts.notes_progress` and `transcripts.notes_run_id` (#939).
 - 3.1.0 restores an archive made on 3.2.0, without the acceptance times.
 
 ## Known issues

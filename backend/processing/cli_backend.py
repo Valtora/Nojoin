@@ -31,6 +31,7 @@ from backend.utils.meeting_intelligence import (
     AutomaticMeetingIntelligenceResult,
 )
 from backend.utils.meeting_notes import MeetingEventContext, NotesPromptContext
+from backend.utils.notes_cancellation import check_notes_run
 from backend.utils.speaker_name_suggestions import SpeakerInferenceResult
 from backend.utils.vision import VisionImage
 
@@ -168,6 +169,7 @@ class CliLLMBackend(LLMBackend):
         # Both subscription CLIs take images without any tool grant: Codex via
         # `--image <FILE>`, Claude via inline content blocks on the streaming
         # input. The manager picks the right one per provider.
+        check_notes_run()
         return self._manager.run_single_turn(
             self.user_id,
             prompt,
@@ -258,6 +260,7 @@ class CliLLMBackend(LLMBackend):
             conversation_history,
             recording_id,
         )
+        check_notes_run()
         yield from self._manager.stream_single_turn(
             self.user_id, prompt, model=self.model, timeout=timeout
         )
@@ -281,6 +284,7 @@ class CliLLMBackend(LLMBackend):
         # An explicit limit bounds the whole CLI turn (#980). Every method
         # defaults to None, not to the hosted backends' per-request defaults,
         # so a caller that gives none gets the manager's DEFAULT_TIMEOUT_SECONDS.
+        check_notes_run()
         return self._manager.run_single_turn(
             self.user_id, prompt, model=self.model, timeout=timeout
         )

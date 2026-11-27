@@ -112,6 +112,7 @@ interface RecordingMainContentProps {
   notesCanRedo: boolean;
   onNotesChange: (notes: string) => void;
   onGenerateNotes: (notesTemplateId?: number | null) => Promise<void>;
+  onCancelNotes?: (notesRunId: string) => Promise<void>;
   onNotesUndo: () => void;
   onNotesRedo: () => void;
 }
@@ -212,6 +213,7 @@ export default function RecordingMainContent({
   notesCanRedo,
   onNotesChange,
   onGenerateNotes,
+  onCancelNotes,
   onNotesUndo,
   onNotesRedo,
 }: RecordingMainContentProps) {
@@ -386,6 +388,7 @@ export default function RecordingMainContent({
           canRedo={notesCanRedo}
           onNotesChange={onNotesChange}
           onGenerateNotes={onGenerateNotes}
+          onCancelNotes={onCancelNotes}
           onFindAndReplace={onFindAndReplace}
           onUndo={onNotesUndo}
           onRedo={onNotesRedo}

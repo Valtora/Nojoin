@@ -2,7 +2,7 @@
 
 import { ButtonBase, InputBase } from '@/components/ui/nativeBases';
 import { SurfaceBase } from '@/components/ui/SurfaceBase';
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback, memo } from "react";
 
 import { DEMO_MODE } from "@/lib/demo";
 import { isImeComposing } from "@/lib/imeComposition";
@@ -27,7 +27,7 @@ import {
 import { Editor } from "@tiptap/react";
 import RichTextEditor from "./RichTextEditor";
 import LinkModal from "./LinkModal";
-import NotesTemplatePicker from "./NotesTemplatePicker";
+import NotesGenerationControl from "./NotesGenerationControl";
 import TableMenu from "./TableMenu";
 import SpellCheckContextMenu from "./SpellCheckContextMenu";
 import Fuse from "fuse.js";
@@ -36,6 +36,8 @@ import { getSpellCheckErrorAtPos } from "@/lib/SpellCheckExtension";
 import { getSettings } from "@/lib/api";
 import type { RecordingId } from "@/types";
 import { loadingButtonProps } from "@/components/ui/loadingButton";
+
+const NotesEditor = memo(RichTextEditor);
 
 /** Notes as the editor is given them: without the generated title, trimmed. */
 function toDisplayNotes(notes: string | null): string | null {
@@ -47,6 +49,8 @@ interface NotesViewProps {
   notes: string | null;
   onNotesChange: (notes: string) => void;
   onGenerateNotes: (notesTemplateId?: number | null) => Promise<void>;
+  onCancelNotes?: (notesRunId: string) => Promise<void>;
+  notesRunId?: string | null;
   /** Template that produced the current notes, for the picker's tick. */
   activeTemplateId?: number | null;
   onFindAndReplace: (
@@ -59,6 +63,8 @@ interface NotesViewProps {
   canUndo: boolean;
   canRedo: boolean;
   isGenerating: boolean;
+  /** The step a long meeting's notes are on while they generate, if any. */
+  generatingStep?: string | null;
   onExport: () => void;
   disableExport?: boolean;
 }
@@ -67,6 +73,8 @@ export default function NotesView({
   notes,
   onNotesChange,
   onGenerateNotes,
+  onCancelNotes,
+  notesRunId,
   activeTemplateId = null,
   onFindAndReplace,
   onUndo,
@@ -74,6 +82,7 @@ export default function NotesView({
   canUndo,
   canRedo,
   isGenerating,
+  generatingStep = null,
   onExport,
   disableExport = false,
 }: NotesViewProps) {
@@ -133,7 +142,7 @@ export default function NotesView({
     }
   }, [displayNotes]);
 
-  const handleEditorChange = (newContent: string) => {
+  const handleEditorChange = useCallback((newContent: string) => {
     setLocalNotes(newContent);
 
     if (saveTimeoutRef.current) {
@@ -150,7 +159,7 @@ export default function NotesView({
       lastSavedNotes.current = newContent;
       onNotesChange(newContent);
     }, 1000); // 1 second debounce
-  };
+  }, [onNotesChange]);
 
   // Initialise spell check service from user settings
   useEffect(() => {
@@ -484,28 +493,15 @@ export default function NotesView({
             {/* Segmented control. items-stretch so the picker matches the main
                 button's height: its icon is shorter than the button's text line,
                 so equal padding alone leaves the two a few pixels apart. */}
-            <div className="flex items-stretch">
-              <ButtonBase
-                data-ui-fill="action"
-                data-ui-hover="action-hover" chrome="action"
-                {...loadingButtonProps(isGenerating, undefined, () => onGenerateNotes())}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-action text-action-on text-sm rounded-l-md hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors aria-disabled:opacity-50 aria-disabled:cursor-not-allowed"
-                title="Generate Notes with AI"
-              >
-                {isGenerating ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Sparkles className="w-4 h-4" />
-                )}
-                {isGenerating ? "Generating..." : generateNotesLabel}
-              </ButtonBase>
-              {/* Structure picker: the plain button uses the default structure. */}
-              <NotesTemplatePicker
-                disabled={isGenerating}
+              <NotesGenerationControl
+                label={generateNotesLabel}
+                isGenerating={isGenerating}
+                step={generatingStep}
+                onGenerate={onGenerateNotes}
+                onCancel={onCancelNotes}
+                notesRunId={notesRunId}
                 activeTemplateId={activeTemplateId}
-                onSelect={(templateId) => onGenerateNotes(templateId)}
               />
-            </div>
             <div className="w-px h-4 bg-surface-card mx-1" />
             <ButtonBase
               onClick={onUndo}
@@ -722,7 +718,7 @@ export default function NotesView({
       <div className="relative flex-1 overflow-y-auto min-h-0">
         {localNotes || isGenerating ? (
           <div className="relative h-full">
-            <RichTextEditor
+            <NotesEditor
               content={localNotes}
               onChange={handleEditorChange}
               onEditorReady={setEditor}

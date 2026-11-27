@@ -174,7 +174,7 @@ export default function RecordingCaptureSlot({
           <div role="progressbar" aria-label="Recording progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)} className="h-3 overflow-hidden rounded-full bg-action-tint">
             <div className="h-full rounded-full bg-action transition-all duration-500" style={{ width: `${progress}%` }} />
           </div>
-          <p className="text-sm text-contrast-helper">{pipelineStep}</p>
+          <p role="status" className="text-sm text-contrast-helper">{pipelineStep}</p>
           {recording.processing_eta_seconds != null ? (
             <p className="text-sm font-medium text-foreground">{formatEta(recording.processing_eta_seconds)}</p>
           ) : recording.processing_eta_learning ? (

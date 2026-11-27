@@ -721,6 +721,11 @@ async def _reset_generated_recording_state(db: AsyncSession, recording_id: int) 
         select(Transcript).where(Transcript.recording_id == recording_id)
     )
     existing_transcript = transcript_result.scalar_one_or_none()
+    if existing_transcript is not None:
+        from backend.utils.generation_claim import NOTES_RUN
+        from backend.utils.generation_run import retire_run
+
+        retire_run(existing_transcript, NOTES_RUN)
     preserve_live_work = bool(
         existing_transcript is not None
         and (existing_transcript.settling_state or {}).get("settled") is True

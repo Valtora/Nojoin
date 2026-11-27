@@ -1,12 +1,16 @@
 "use client";
 
 import { ButtonBase } from "@/components/ui/nativeBases";
-import { useState } from "react";
+import { memo, useState } from "react";
 import { FileText, RefreshCw, X } from "lucide-react";
 
 import NotesView from "@/components/NotesView";
 import RichTextEditor from "@/components/RichTextEditor";
+import NotesGenerationControl from "@/components/NotesGenerationControl";
 import type { Recording } from "@/types";
+
+const ReadOnlyNotes = memo(RichTextEditor);
+const ignoreChange = () => undefined;
 
 interface NotesSectionProps {
   active: boolean;
@@ -19,6 +23,7 @@ interface NotesSectionProps {
   canRedo: boolean;
   onNotesChange: (notes: string) => void;
   onGenerateNotes: (notesTemplateId?: number | null) => Promise<void>;
+  onCancelNotes?: (notesRunId: string) => Promise<void>;
   onFindAndReplace: (
     find: string,
     replace: string,
@@ -40,6 +45,7 @@ export default function NotesSection({
   canRedo,
   onNotesChange,
   onGenerateNotes,
+  onCancelNotes,
   onFindAndReplace,
   onUndo,
   onRedo,
@@ -89,19 +95,31 @@ export default function NotesSection({
           </ButtonBase>
         </div>
       )}
-      {inFlight && hasRetainedPublication && recording.transcript?.notes ? (
-        <RichTextEditor content={recording.transcript.notes} editable={false} onChange={() => undefined} />
-      ) : inFlight ? <p className="m-auto p-6 text-center text-sm text-contrast-helper">Meeting notes will be available once processing finishes. Add your own notes beneath the transcript.</p> : <NotesView
+      {inFlight ? <>
+        {(recording.transcript?.transcript_status === "completed" ||
+          (recording.transcript?.notes_status === "generating" && recording.transcript.notes_run_id)) &&
+          <div className="flex justify-end border-b border-control-border px-3 py-3 md:px-6">
+            <NotesGenerationControl label={recording.transcript?.notes?.trim() ? "Regenerate Notes" : "Generate Notes"}
+              isGenerating={isGenerating} step={recording.transcript?.notes_progress ?? null}
+              notesRunId={recording.transcript?.notes_run_id} onGenerate={onGenerateNotes} onCancel={onCancelNotes} />
+          </div>}
+        {hasRetainedPublication && recording.transcript?.notes ?
+          <ReadOnlyNotes content={recording.transcript.notes} editable={false} onChange={ignoreChange} /> :
+          <p className="m-auto p-6 text-center text-sm text-contrast-helper">Meeting notes will be available once processing finishes. Add your own notes beneath the transcript.</p>}
+      </> : <NotesView
         recordingId={recording.id}
         notes={recording.transcript?.notes || null}
         onNotesChange={onNotesChange}
         onGenerateNotes={onGenerateNotes}
+        onCancelNotes={onCancelNotes}
+        notesRunId={recording.transcript?.notes_run_id}
         onFindAndReplace={onFindAndReplace}
         onUndo={onUndo}
         onRedo={onRedo}
         canUndo={canUndo}
         canRedo={canRedo}
         isGenerating={isGenerating}
+        generatingStep={recording.transcript?.notes_progress}
         onExport={onExport}
         disableExport={!canExport}
       />}

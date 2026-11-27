@@ -30,7 +30,7 @@ from backend.tests.test_generate_notes_task import (
     _create_notes_task_database,
     _run_generate_notes_task,
 )
-from backend.utils.generation_claim import GENERATION_CLAIM_EXPIRY
+from backend.utils.generation_claim import GENERATION_CLAIM_EXPIRY, NOTES_RUN, RunKind
 from backend.utils.status_manager import update_recording_status
 from backend.utils.time import utc_now
 from backend.worker.tasks import pipeline, side_runs
@@ -329,7 +329,7 @@ def test_a_heartbeat_renews_the_claim_until_its_block_ends(
     renewals: list[tuple[int, str]] = []
     renewed = threading.Event()
 
-    def renew(recording_id: int, field: str) -> None:
+    def renew(recording_id: int, field: str, *, run_id=None) -> None:
         renewals.append((recording_id, field))
         renewed.set()
 
@@ -347,7 +347,7 @@ def test_a_heartbeat_renews_the_claim_until_its_block_ends(
 def test_a_failed_renewal_does_not_end_the_run(monkeypatch: pytest.MonkeyPatch) -> None:
     attempts = threading.Event()
 
-    def renew(recording_id: int, field: str) -> None:
+    def renew(recording_id: int, field: str, *, run_id=None) -> None:
         attempts.set()
         raise RuntimeError("database restarting")
 
@@ -363,10 +363,15 @@ def test_a_renewal_stamps_only_a_claim_still_generating(
     then = utc_now() - timedelta(minutes=10)
     _insert(engine, 1, status="PROCESSED", notes_status="generating", touched=then)
     _insert(engine, 2, status="PROCESSED", notes_status="completed", touched=then)
+    token = "12345678123456781234567812345678"
+    with engine.begin() as connection:
+        connection.execute(
+            text("UPDATE transcripts SET notes_run_id = :token"), {"token": token}
+        )
     monkeypatch.setattr(side_runs, "get_sync_session", lambda: Session(engine))
 
-    side_runs.renew_transcript_claim(1, "notes_status")
-    side_runs.renew_transcript_claim(2, "notes_status")
+    side_runs.renew_transcript_claim(1, NOTES_RUN, run_id=token)
+    side_runs.renew_transcript_claim(2, NOTES_RUN, run_id=token)
 
     with engine.connect() as connection:
         stamps = dict(
@@ -494,8 +499,8 @@ def test_a_notes_run_leaves_the_meeting_finished_while_the_model_works(
             return "# Meeting Notes"
 
     class Heartbeat:
-        def __init__(self, recording_id: int, field: str) -> None:
-            self.claim = (recording_id, field)
+        def __init__(self, recording_id: int, field: RunKind, *, run_id=None) -> None:
+            self.claim = (recording_id, field.status_field)
 
         def __enter__(self) -> None:
             heartbeats.append(self.claim)
