@@ -40,6 +40,7 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 - In the live transcript, editing a line no longer sends the first words of the reply after it back to that line's speaker. While your wording still ends with a full stop, question mark or exclamation mark, they stay with the person replying (#975).
 - In a processed transcript, the first words of a reply after a line you edited now move to the person replying, as they do live, while your wording ends with a full stop, question mark or exclamation mark. After a line whose speaker you chose, they keep the speaker processing found for them (#1035).
 - In a processed transcript, words without timings that follow two corrected lines, one inside the other, are placed after both. They could overlap the outer line and take the speaker chosen for it (#971).
+- Voice activity detection moves to silero-vad 6.3, whose new model misses about half as much speech in live captions. Final transcripts change by half a point of word error rate or less, and the same **Speech detection threshold** now counts a little less audio as speech (#1091).
 
 ### Meetings, tags and search
 
