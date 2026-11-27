@@ -63,7 +63,7 @@ These endpoints are rate limited per client address:
 | Single sign-on callback | 30 per 10 minutes |
 | OAuth client registration | 10 per 10 minutes |
 | OAuth token | 60 per 10 minutes |
-| Anonymous MCP requests | 30 per minute |
+| Anonymous MCP requests, with `MCP_ANONYMOUS_DISCOVERY=true` | 30 per minute |
 | Calendar webhooks, per provider | 300 per minute |
 
 ## Terms of Use Acceptance
@@ -162,7 +162,7 @@ The MCP connector ([MCP.md](MCP.md)) runs its own OAuth 2.1 authorization server
 - Users list and revoke grants under **Settings > Integrations > Connected apps**. Revoking a grant stops it refreshing, and its current access token expires within the hour.
 - Every `token_version` bump ([above](#standard-jwt-containment)) cuts off all of the user's connections at once. The new version rejects their access tokens, and the same transaction revokes every grant, because a refresh token carries no `tv`. A refresh racing the bump either finishes first and has its new token revoked, or waits and is refused. Each client then needs a fresh consent.
 - A user who must change their password before consenting is sent to `/settings/profile` and back to the consent page afterwards. The return target must resolve to `/oauth/authorize` on Nojoin's own origin, so a crafted link can at most open a consent screen.
-- `MCP_ANONYMOUS_DISCOVERY` (default `true`) lets `/mcp` answer five JSON-RPC methods without a token (`initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`), for clients such as Codex Desktop that cannot start OAuth from a bare `401`. An anonymous `tools/call` gets an in-band authentication challenge and runs nothing. The only data disclosed is generic tool metadata, the same on every deployment and published in MCP.md. Any other request, malformed ones included, gets `401`. Set the variable to `false` to send `401` to every unauthenticated request.
+- By default every unauthenticated request to `/mcp` gets `401` with a `WWW-Authenticate: Bearer resource_metadata="…"` challenge (RFC 9728), so clients detect that sign-in is required before any tool can be used. `MCP_ANONYMOUS_DISCOVERY=true` (default `false`) lets `/mcp` answer five JSON-RPC methods without a token (`initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`), for Codex Desktop setups that cannot start OAuth from a bare `401`. An anonymous `tools/call` then gets an in-band authentication challenge and runs nothing. The only data disclosed is generic tool metadata, the same on every deployment and published in MCP.md, and any other request, malformed ones included, still gets `401`. Only `true`, `1`, `yes` or `on` turns it on.
 - `MCP_ENABLED=false` removes the connector: `/mcp`, the OAuth endpoints and the discovery documents all return `404` ([DEPLOYMENT.md](DEPLOYMENT.md#configure-env)).
 
 ## CLI OAuth Subscription Access

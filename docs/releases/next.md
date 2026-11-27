@@ -23,6 +23,7 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 <!-- What stops working or behaves differently after the upgrade, and what to do about it. Each also goes under Before you upgrade in the release body. -->
 
 - **Each user accepts the terms of use.** Every account except the setup account sees the terms once, at its next page load, and cannot start a recording or import audio until it accepts. Until then the API answers that account's new captures and imports with 403 and the code `legal_acceptance_required`, so an API client acting for it needs the person to accept once in the web app (#1007).
+- **The MCP connector asks for sign-in from the first request.** `MCP_ANONYMOUS_DISCOVERY` now defaults to `false`, so every unauthenticated request to `/mcp` gets `401` with the OAuth challenge, and Claude's **Add custom connector** dialog detects **Sign in now** and **Register automatically**. Codex Desktop loses the anonymous handshake it started sign-in from, so mark the server for OAuth in Codex (`codex mcp login nojoin`, or `auth = "oauth"` in `~/.codex/config.toml`), or set `MCP_ANONYMOUS_DISCOVERY=true` to keep the anonymous handshake (#1092).
 
 ## Changes
 
@@ -106,6 +107,7 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 - Upgrade the API and the workers together, as the upgrade commands do: a 3.2.0 worker fails on the missing `users.legal_accepted_at` column until the API has migrated (#1007).
 - To autoscale the prefork lanes, copy the `worker-cpu`, `worker-io` and `worker-parse` commands from `docker-compose.example.yml` into your `docker-compose.yml`, which otherwise keeps its fixed pools. The idle restart of `worker-gpu` needs no change (#1054).
 - To use single sign-on, copy the `NOJOIN_OIDC_*` and `NOJOIN_PASSWORD_LOGIN` lines from `docker-compose.example.yml` into the `api` service of your `docker-compose.yml`, and set them in `.env` ([ADMIN.md](../ADMIN.md#single-sign-on)). Without them nothing changes (#1088).
+- An `.env` copied from an earlier `.env.example` sets `MCP_ANONYMOUS_DISCOVERY=true`, and an api service copied from an earlier `docker-compose.example.yml` passes `${MCP_ANONYMOUS_DISCOVERY:-true}`, so the anonymous MCP handshake stays on after the upgrade. To take the new default, set `MCP_ANONYMOUS_DISCOVERY=false` in `.env`, or remove it there and change the compose line to `:-false`. Keep `true` only if people still connect Codex Desktop without marking the server for OAuth. A Claude connector added with **No sign-in** never signs anyone in: remove it and add it again with **Sign in now** (#1092).
 
 ## Migration
 
