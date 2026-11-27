@@ -897,6 +897,16 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
     try {
       const state = await generateNotesAction(current.id, notesTemplateId ?? null);
       if (state) applyNotesLifecycle(current.id, state, order);
+      else if (notesMutation.current === order) {
+        // Refused, by a run another tab started or by settings the run needs,
+        // which the server has recorded: show its state now, not at the next poll.
+        try {
+          const updated = await metadataReader.read(current.id);
+          if (updated && notesMutation.current === order) await storeRecordingRead(updated, true);
+        } catch (refreshError: unknown) {
+          console.error("Failed to refresh recording after notes error:", refreshError);
+        }
+      }
       if (notesMutation.current === order) setActivePanel("notes");
     } finally {
       if (notesMutation.current === order) {
@@ -904,7 +914,7 @@ export function useRecordingDetail({ params, capture }: UseRecordingDetailParams
         setIsGeneratingNotes(false);
       }
     }
-  }, [generateNotesAction, metadataReader, applyNotesLifecycle, setActivePanel]);
+  }, [generateNotesAction, metadataReader, applyNotesLifecycle, storeRecordingRead, setActivePanel]);
 
   const handleCancelNotes = useCallback(async (notesRunId: string) => {
     const current = recordingRef.current;

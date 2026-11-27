@@ -207,6 +207,20 @@ describe("notes lifecycle mutations through the recording page", () => {
     expect(result.current.recording?.transcript?.notes_run_id).toBe(RUN_B);
   });
 
+  it("shows the run another tab started as soon as Generate is refused", async () => {
+    server = recording(null);
+    const { result } = renderHook(() => useRecordingDetail({ params }), { wrapper: Providers });
+    await flush();
+    // The other tab's Generate won the transcript's lock first.
+    server = recording(RUN_B);
+    generate = async (config) => { throw new AxiosError("Conflict", "ERR_BAD_REQUEST", config, undefined,
+      response(config, { detail: "Meeting notes are already generating." }, 409)); };
+    await act(async () => { await result.current.handleGenerateNotes(); });
+    expect(result.current.recording?.transcript?.notes_run_id).toBe(RUN_B);
+    expect(result.current.recording?.transcript?.notes_status).toBe("generating");
+    expect(result.current.isGeneratingNotes).toBe(false);
+  });
+
   it("applies the replacement run in a stale Cancel 409 without another GET", async () => {
     const { result } = renderHook(() => useRecordingDetail({ params }), { wrapper: Providers });
     await flush();
