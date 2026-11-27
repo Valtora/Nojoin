@@ -15,6 +15,12 @@ This is the operator reference for running Nojoin. For a first install, follow [
 - Disk space for recordings, derived files and models.
 - For a GPU on Linux, the NVIDIA driver and the NVIDIA Container Toolkit.
 
+## Resource Monitor Access
+
+**Settings > System and logs > Resources** uses the API's existing read-only Docker socket proxy (`CONTAINERS=1`, `POST=0`, `DOCKER_HOST=tcp://socket-proxy:2375`). Container accounting is scoped by the API container's `com.docker.compose.project` label; running the API outside Compose leaves Nojoin's share unavailable. CPU percentages use total host capacity, and container RAM includes cache. Host figures from psutil describe the Linux host, or Docker Desktop's Linux VM, rather than container limits.
+
+GPU graphs need the NVIDIA driver/NVML library and GPU device access in the **API** container too; GPU access on the worker alone does not expose NVML to the API. Grant the API read access to the intended NVIDIA devices using the Container Toolkit, with the `utility` driver capability for NVML. Missing NVML or no accessible devices hides GPU graphs; it does not stop CPU/RAM monitoring. CPU-only installations need no NVIDIA setup. Worker reports and the two-second shared sample cache use the existing Redis service; no new service or stored history is needed.
+
 ## Quick Deployment
 
 `docker-compose.example.yml` is the deployment template and pulls the published GHCR images. `.env.example` is the configuration template. Copy them to `docker-compose.yml` and `.env` as [GETTING_STARTED.md](GETTING_STARTED.md) describes, then before the first start:
