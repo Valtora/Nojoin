@@ -49,6 +49,8 @@ TEST_TABLE_NAMES = [
     "user_tasks",
     "user_task_tags",
     "user_task_recordings",
+    "recording_shares",
+    "user_identities",
 ]
 
 

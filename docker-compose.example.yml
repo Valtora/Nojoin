@@ -170,11 +170,25 @@ services:
       <<: *shared-app-environment
       DOCKER_HOST: tcp://socket-proxy:2375
       MCP_ENABLED: ${MCP_ENABLED:-true}
-      MCP_ANONYMOUS_DISCOVERY: ${MCP_ANONYMOUS_DISCOVERY:-true}
+      MCP_ANONYMOUS_DISCOVERY: ${MCP_ANONYMOUS_DISCOVERY:-false}
       FIRST_RUN_PASSWORD: ${FIRST_RUN_PASSWORD:?Set FIRST_RUN_PASSWORD in .env}
       XDG_CACHE_HOME: /shared_model_cache
       HF_HOME: /shared_model_cache/huggingface
       NOJOIN_TRUSTED_PROXIES: ${NOJOIN_TRUSTED_PROXIES:-127.0.0.1,::1,nginx}
+      # Single sign-on through an OpenID Connect provider (docs/ADMIN.md#single-sign-on).
+      # No defaults here: backend/core/oidc_config.py owns them and reads an
+      # empty value as unset, so SSO stays off until the issuer is set.
+      NOJOIN_OIDC_ISSUER: ${NOJOIN_OIDC_ISSUER:-}
+      NOJOIN_OIDC_CLIENT_ID: ${NOJOIN_OIDC_CLIENT_ID:-}
+      NOJOIN_OIDC_CLIENT_SECRET: ${NOJOIN_OIDC_CLIENT_SECRET:-}
+      NOJOIN_OIDC_DISPLAY_NAME: ${NOJOIN_OIDC_DISPLAY_NAME:-}
+      NOJOIN_OIDC_SCOPES: ${NOJOIN_OIDC_SCOPES:-}
+      NOJOIN_OIDC_USERNAME_CLAIM: ${NOJOIN_OIDC_USERNAME_CLAIM:-}
+      NOJOIN_OIDC_GROUPS_CLAIM: ${NOJOIN_OIDC_GROUPS_CLAIM:-}
+      NOJOIN_OIDC_ALLOWED_GROUPS: ${NOJOIN_OIDC_ALLOWED_GROUPS:-}
+      NOJOIN_OIDC_ADMIN_GROUPS: ${NOJOIN_OIDC_ADMIN_GROUPS:-}
+      NOJOIN_OIDC_AUTO_CREATE: ${NOJOIN_OIDC_AUTO_CREATE:-}
+      NOJOIN_PASSWORD_LOGIN: ${NOJOIN_PASSWORD_LOGIN:-}
       # Only the api runs the stall watchdog. No defaults here:
       # backend/utils/stall_watchdog.py owns them and reads an empty value as unset.
       NOJOIN_STALL_WATCHDOG_ENABLED: ${NOJOIN_STALL_WATCHDOG_ENABLED:-}

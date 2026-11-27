@@ -105,6 +105,14 @@ vi.mock("@/lib/store", () => ({
 }));
 
 vi.mock("@/lib/api", () => ({
+  // The session dialog asks which sign-in methods to offer.
+  getLoginMethods: async () => ({
+    password: true,
+    password_policy: "enabled",
+    oidc: { enabled: false, display_name: null },
+  }),
+  ssoSignInUrl: () => "/api/v1/login/oidc/start",
+  leaveShare: async () => undefined,
   getUserTasks: (...args: unknown[]) => getUserTasks(...args),
   updateUserTask: (...args: unknown[]) => updateUserTask(...args),
   getCurrentUser: (...args: unknown[]) => getCurrentUser(...args),

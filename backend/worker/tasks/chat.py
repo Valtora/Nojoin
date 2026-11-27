@@ -28,7 +28,15 @@ def meeting_chat_task(
     recording_id: int,
     augmented_message: str,
     conversation_history: list | None = None,
+    user_id: int | None = None,
 ) -> None:
+    """Answer one chat turn on the asker's own LLM configuration.
+
+    ``user_id`` is who asked. Chat is personal even in a shared meeting: the
+    question runs on the asker's provider and subscription, never the owner's,
+    and the answer is stored as theirs. Older callers passed no ``user_id``;
+    then the recording's owner is the asker, as it always was before sharing.
+    """
     session = self.session
     publisher = ChatStreamPublisher(self.request.id)
     try:
@@ -42,14 +50,15 @@ def meeting_chat_task(
         ).first()
         meeting_notes = (transcript.notes if transcript else "") or ""
 
+        asker_id = user_id if user_id is not None else recording.user_id
         user_settings = {}
-        if recording.user_id:
-            user = session.get(User, recording.user_id)  # noqa: F405
+        if asker_id:
+            user = session.get(User, asker_id)  # noqa: F405
             if user and user.settings:
                 user_settings = user.settings
 
         llm_config = resolve_llm_config(  # noqa: F405
-            session, user_settings, user_id=recording.user_id
+            session, user_settings, user_id=asker_id
         )
         backend = _llm_backend_from_config(llm_config)  # noqa: F405
 
@@ -84,7 +93,7 @@ def meeting_chat_task(
             session.add(
                 ChatMessage(
                     recording_id=recording.id,
-                    user_id=recording.user_id,
+                    user_id=asker_id,
                     role="assistant",
                     content=full_response,
                 )

@@ -10,6 +10,7 @@ import {
   MoreHorizontal,
   NotebookPen,
   Pause,
+  Users,
   UploadCloud,
 } from "lucide-react";
 
@@ -20,6 +21,7 @@ import { TOUCH_TARGET_SQUARE } from "@/components/ui/touchTarget";
 import { Badge } from "@/components/ui/Badge";
 import RecordingAttentionBadge from "@/components/RecordingAttentionBadge";
 import { cn } from "@/lib/cn";
+import { ownerLabel, ownsRecording } from "@/lib/sharing/access";
 import { isImeComposing } from "@/lib/imeComposition";
 import { parseServerTimestamp } from "@/lib/serverTimestamp";
 import { formatTimeZoneDay, formatTimeZoneLocale } from "@/lib/timezone";
@@ -283,6 +285,15 @@ function RecordingListRow({
               >
                 {recording.name}
               </h3>
+              {!ownsRecording(recording) ? (
+                <span
+                  className="ml-1 mt-0.5 shrink-0 text-contrast-icon-muted"
+                  title={`Shared by ${ownerLabel(recording)}`}
+                >
+                  <Users aria-hidden="true" className="h-3.5 w-3.5" />
+                  <span className="sr-only">Shared by {ownerLabel(recording)}</span>
+                </span>
+              ) : null}
               <StatusIcon recording={recording} />
             </div>
 

@@ -307,7 +307,7 @@ async def test_regenerate_notes_starts_over_a_claim_lost_with_its_worker(
 
     assert response.status_code == 200, response.text
     assert response.json()["notes_status"] == "generating"
-    assert stub_celery_dispatch == [(NOTES_TASK, [1, None], None)]
+    assert stub_celery_dispatch == [(NOTES_TASK, [1, None, 1], None)]
     status, notes_status, claimed_at = await _claim_row(session_maker)
     # The new claim is current, and the meeting stays finished meanwhile.
     assert status == "PROCESSED"
@@ -369,7 +369,7 @@ async def test_analyse_meeting_starts_over_a_claim_lost_with_its_worker(
 
     assert response.status_code == 200, response.text
     assert analytics_dispatches == [
-        ("backend.worker.tasks.compute_meeting_analysis_task", [1])
+        ("backend.worker.tasks.compute_meeting_analysis_task", [1, 1])
     ]
 
 

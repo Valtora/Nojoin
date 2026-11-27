@@ -17,6 +17,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from backend.api.v1.api import api_router
 from backend.api.v1.endpoints.oauth import well_known_router
 from backend.celery_app import apply_api_dispatch_limits
+from backend.core.oidc_config import validate_sign_in_configuration
 from backend.mcp_server import (
     NormaliseMcpMountPathMiddleware,
     build_mcp_asgi_app,
@@ -362,6 +363,7 @@ async def signing_key_unavailable_handler(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     log_signing_keyring_status(logger_instance=logger)
+    validate_sign_in_configuration()
     run_migrations()
     await ensure_owner_exists()
     await log_first_run_setup_pointer()

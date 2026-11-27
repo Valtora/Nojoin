@@ -194,6 +194,12 @@ SPEAKERS_ROUTE_CONTRACT = [
         "List",
     ),
     (
+        "/recordings/{recording_id}/speaker-candidates",
+        ("GET",),
+        "get_speaker_candidates",
+        "List",
+    ),
+    (
         "/recordings/{recording_id}/speakers/{diarization_label}",
         ("DELETE",),
         "delete_recording_speaker",

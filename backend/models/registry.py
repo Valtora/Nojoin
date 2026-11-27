@@ -32,6 +32,8 @@ from backend.models import (
     people_tag,
     pipeline,
     recording,
+    recording_restore_request,
+    recording_share,
     revoked_jwt,
     speaker,
     speaker_name_event,
@@ -40,6 +42,7 @@ from backend.models import (
     timeline_note,
     transcript,
     user,
+    user_identity,
 )
 
 __all__ = [
@@ -57,6 +60,8 @@ __all__ = [
     "people_tag",
     "pipeline",
     "recording",
+    "recording_restore_request",
+    "recording_share",
     "revoked_jwt",
     "speaker",
     "speaker_name_event",
@@ -65,4 +70,5 @@ __all__ = [
     "timeline_note",
     "transcript",
     "user",
+    "user_identity",
 ]

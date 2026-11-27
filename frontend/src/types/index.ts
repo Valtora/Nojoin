@@ -40,6 +40,14 @@ export interface User {
   legal_accepted_at?: string | null;
   /** Whether the user must accept the terms of use before recording. */
   legal_acceptance_required?: boolean;
+  /** `oidc` accounts were made by the identity provider and have no password. */
+  auth_source?: "local" | "oidc";
+  /** Whether the account is linked to an identity at the provider. */
+  oidc_linked?: boolean;
+  display_name?: string | null;
+  email?: string | null;
+  /** The provider's groups as of the user's last single sign-on. */
+  oidc_groups?: string[];
 }
 
 export interface Invitation {
@@ -584,6 +592,8 @@ export interface Transcript extends BaseDBModel {
   text?: string;
   segments: TranscriptSegment[];
   notes?: string;
+  /** Token for the notes' content; a save sends it back to detect a concurrent edit. */
+  notes_revision?: string;
   meeting_edge_focus?: string | null;
   meeting_edge_payload?: MeetingEdgePayload | null;
   meeting_edge_status?: string;
@@ -663,8 +673,17 @@ export interface LanguageNotice {
   reprocess_language: string;
 }
 
+/** The caller's level on a meeting. The server enforces it; the UI hides what it does not allow. */
+export type RecordingAccess = "owner" | "edit" | "view";
+
 export interface Recording extends Omit<BaseDBModel, "id"> {
   id: RecordingId;
+  /** Absent from servers without sharing, which means the caller owns it. */
+  access?: RecordingAccess;
+  /** Who owns a meeting shared with the caller; null for their own. */
+  owner?: { username: string; display_name?: string | null } | null;
+  /** Shared with the caller by name, so they can leave it; a group share cannot be left. */
+  can_leave?: boolean;
   name: string;
   meeting_uid: string;
   audio_path: string;

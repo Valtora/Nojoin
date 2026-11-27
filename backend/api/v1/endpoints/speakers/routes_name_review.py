@@ -22,6 +22,12 @@ from backend.models.recording_public import RecordingSpeakerPublicRead
 from backend.models.speaker import RecordingSpeaker
 from backend.models.transcript import Transcript
 from backend.models.user import User
+from backend.services.recording_access import (
+    Access,
+    RecordingGrant,
+    require_recording,
+    resolve_grant,
+)
 from backend.utils.speaker_name_suggestions import (
     SPEAKER_SUGGESTION_STATUS_ACCEPTED,
     SPEAKER_SUGGESTION_STATUS_REJECTED,
@@ -125,9 +131,13 @@ async def confirm_speaker_name(
     diarization_label: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.EDIT)),
 ):
     """Confirm a pending name: the user's rename to the name it shows."""
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
     await _require_recording_speaker_mutations_supported(db, recording)
     speaker = await _pending_speaker(db, recording, diarization_label)
     name, source = shown_name(speaker), speaker.name_source
@@ -145,6 +155,7 @@ async def confirm_speaker_name(
         db=db,
         current_user=current_user,
         source="api",
+        recording=recording,
     )
     _record_review(recording, diarization_label, "confirmed", source)
     return confirmed
@@ -159,9 +170,13 @@ async def dismiss_speaker_name(
     diarization_label: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.EDIT)),
 ):
     """Dismiss an unconfirmed name ("Not Alex"); put back "Speaker N"."""
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
     await _require_recording_speaker_mutations_supported(db, recording)
     speaker = await _pending_speaker(
         db, recording, diarization_label, allow_unlocked_voiceprint=True

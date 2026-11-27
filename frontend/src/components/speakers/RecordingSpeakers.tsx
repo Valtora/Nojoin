@@ -3,6 +3,7 @@
 import { useCallback, useMemo, type ComponentProps } from "react";
 import type { Recording, RecordingSpeaker } from "@/types";
 import { isLiveCaptureInProgress } from "@/lib/liveCapture";
+import { ownsRecording } from "@/lib/sharing/access";
 import SpeakerPanel from "@/components/SpeakerPanel";
 import { useLiveSpeakerNaming } from "@/components/transcript/_hooks/useLiveSpeakerNaming";
 import type { LiveTranscript } from "@/components/transcript/_hooks/useLiveTranscript";
@@ -31,9 +32,13 @@ export default function RecordingSpeakers({ recording, liveTranscript, readOnly 
   }, [refreshLive, onPeopleChanged]);
   const naming = useLiveSpeakerNaming(recording.id, applyNames, onAccepted,
     liveTranscript?.applyLiveSpeakerMerges, liveTranscript?.applyLiveSpeakerSuggestions);
-  const capturing = isLiveCaptureInProgress(recording) && !readOnly;
+  // Voiceprints and live naming act on the owner's People library and
+  // capture, so they stay with the owner of a shared meeting.
+  const owner = ownsRecording(recording);
+  const capturing = isLiveCaptureInProgress(recording) && !readOnly && owner;
   const panelSpeakers = useMemo(() => [...speakers], [speakers]);
   return <SpeakerPanel {...props} speakers={panelSpeakers} disableEditing={readOnly || props.disableEditing}
+    ownsLibrary={owner}
     liveSpeakerNames={liveTranscript?.liveSpeakerNames}
     onRenameLiveSpeaker={capturing ? naming.renameLiveSpeaker : undefined}
     onMergeLiveSpeaker={capturing ? naming.mergeLiveSpeaker : undefined}

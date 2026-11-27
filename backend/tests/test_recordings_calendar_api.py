@@ -13,6 +13,7 @@ from sqlalchemy.pool import StaticPool
 from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
 from backend.models.user import User
+from backend.tests.sqlite_schemas import SHARING_SCHEMAS
 
 TEST_TIMESTAMP = datetime(2026, 4, 12, 10, 0, 0)
 
@@ -125,6 +126,8 @@ async def test_session_maker() -> sessionmaker:
 
     async with engine.begin() as connection:
         await connection.execute(text(RECORDINGS_SCHEMA))
+        for schema in SHARING_SCHEMAS:
+            await connection.execute(text(schema))
 
     try:
         yield session_maker

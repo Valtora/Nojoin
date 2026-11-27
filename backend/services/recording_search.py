@@ -157,29 +157,32 @@ def _speaker_name_contains(term: str) -> ColumnElement[bool]:
     )
 
 
-def _tag_name_contains(term: str) -> ColumnElement[bool]:
+def _tag_name_contains(term: str, user_id: int) -> ColumnElement[bool]:
+    # Tags are personal: on a meeting shared with the searcher, only their own
+    # tags count, not the owner's or another sharee's.
     return exists(
         select(col(RecordingTag.id))
         .join(Tag, col(Tag.id) == col(RecordingTag.tag_id))
         .where(col(RecordingTag.recording_id) == col(Recording.id))
+        .where(col(Tag.user_id) == user_id)
         .where(_contains(col(Tag.name), term))
         .correlate(Recording)
     )
 
 
-def recording_search_condition(query: str) -> ColumnElement[bool] | None:
+def recording_search_condition(query: str, user_id: int) -> ColumnElement[bool] | None:
     """Meetings whose title, tags, speaker names or transcript hold ``query``.
 
     Case-insensitive substring matching of ``search_term(query)``. ``None``
-    for a blank query. The cheap tests come first, as Postgres stops at the
-    first that holds.
+    for a blank query. Only ``user_id``'s own tags are searched. The cheap
+    tests come first, as Postgres stops at the first that holds.
     """
     term = search_term(query)
     if not term:
         return None
     return or_(
         _contains(col(Recording.name), term),
-        _tag_name_contains(term),
+        _tag_name_contains(term, user_id),
         _speaker_name_contains(term),
         _transcript_contains(term),
     )

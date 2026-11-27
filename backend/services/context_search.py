@@ -18,14 +18,18 @@ from sqlmodel import select
 from backend.models.context_chunk import ContextChunk
 from backend.models.recording import Recording
 from backend.models.tag import RecordingTag
+from backend.models.user import User
 from backend.processing.text_embedding_version import TEXT_EMBEDDING_VERSION
+from backend.services.recording_access import accessible_recordings_filter
+from backend.services.user_identities import groups_of
 from backend.utils.note_attachments import unread_attachment_ids
 
 SearchSources = Literal["all", "transcripts", "documents"]
 
 
-def searchable_recording_ids(
-    user_id: int,
+def searchable_recording_ids(  # noqa: PLR0913 - keyword-only search filters
+    user: User,
+    groups: Sequence[str] = (),
     *,
     recording_public_ids: Optional[Sequence[str]] = None,
     tag_ids: Optional[Sequence[int]] = None,
@@ -34,12 +38,14 @@ def searchable_recording_ids(
 ):
     """Subquery of recording ids the search may touch.
 
-    The user_id filter is the security boundary: every other filter only
-    narrows within the caller's own library. Soft-deleted recordings are
-    excluded, matching what the rest of the product treats as gone.
+    The access filter is the security boundary: the caller's own recordings
+    and the ones shared with them, directly or through ``groups``, as in the
+    recordings list. Every other filter only narrows within those.
+    Soft-deleted recordings are excluded, matching what the rest of the
+    product treats as gone.
     """
     statement = select(Recording.id).where(
-        Recording.user_id == user_id,
+        accessible_recordings_filter(user, groups),
         Recording.is_deleted.is_(False),
     )
     if recording_public_ids:
@@ -62,7 +68,7 @@ def searchable_recording_ids(
 async def search_context_chunks(  # noqa: PLR0913 - keyword-only search filters
     db: AsyncSession,
     *,
-    user_id: int,
+    user: User,
     query_embedding: Sequence[float],
     limit: int,
     sources: SearchSources = "all",
@@ -71,7 +77,8 @@ async def search_context_chunks(  # noqa: PLR0913 - keyword-only search filters
     start: Optional[datetime] = None,
     end: Optional[datetime] = None,
 ) -> list[tuple[ContextChunk, float]]:
-    """Rank the user's chunks by cosine distance to the query embedding.
+    """Rank the chunks of the meetings ``user`` can open by cosine distance to
+    the query embedding.
 
     Returns (chunk, distance) pairs, nearest first. Only vectors from the
     current embedding version are scored: older vectors are incomparable
@@ -83,7 +90,8 @@ async def search_context_chunks(  # noqa: PLR0913 - keyword-only search filters
         .where(
             ContextChunk.recording_id.in_(
                 searchable_recording_ids(
-                    user_id,
+                    user,
+                    await groups_of(db, user),
                     recording_public_ids=recording_public_ids,
                     tag_ids=tag_ids,
                     start=start,

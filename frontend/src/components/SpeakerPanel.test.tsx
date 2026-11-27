@@ -247,6 +247,19 @@ describe("SpeakerPanel", () => {
     ]);
   });
 
+  it("leaves voiceprints and Add to People out of the menu on a meeting someone else owns", () => {
+    renderPanel({ ownsLibrary: false });
+
+    fireEvent.contextMenu(screen.getByText("Alice"));
+
+    expect(lastMenuItems.map((item) => item.label)).toEqual([
+      "Rename / Assign",
+      "Merge into...",
+      "Split / Unmerge Speaker",
+      "Delete",
+    ]);
+  });
+
   it("renames every member label and refreshes on submit", async () => {
     const { onRefresh } = renderPanel({
       speakers: [

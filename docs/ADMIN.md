@@ -8,7 +8,7 @@ This guide is for Owners and Admins of a self-hosted Nojoin installation. [USAGE
 | --- | --- |
 | Owner | Everything an Admin has, plus creating, promoting, changing and deleting Owners. |
 | Admin | Users, invitations, and the administrator settings. |
-| User | Their own recordings, tags, People library, settings and connected services. |
+| User | Their own recordings, tags, People library, settings and connected services, and the meetings others share with them. |
 
 Some actions also need superuser rights, which only the account created at first-run setup (the setup account) has: editing an existing user's username, password, active status or AI analysis limit, backup and restore, and viewing or downloading logs. Settings shows these to the setup account alone. Other Owners and Admins can still create and delete accounts and change roles in the users table, within the Owner limits above.
 
@@ -29,6 +29,63 @@ Passwords need at least 8 characters, and one made entirely of whitespace is ref
 Every account except the setup account accepts the [terms of use](LEGAL.md) for itself the first time it signs in, Owners and Admins included, whether it joined through an invitation or was created in the users table. Someone with a temporary password changes it first. Accounts that existed before 3.2.0 are asked at their next visit; the setup account accepted during setup and is not asked again. Until an account accepts, it sees the terms in place of every page, with **Sign out** the only other choice, and Nojoin refuses to start a recording or import audio for it, through the API too ([SECURITY.md](SECURITY.md#terms-of-use-acceptance)). A recording already running carries on.
 
 The users table's **Terms accepted** column shows the day each account accepted, in your timezone, or **Not yet accepted**. The setup account of an installation set up before 3.2.0 has no recorded date and shows a dash. Nobody can accept for someone else, and no setting changes or clears the date.
+
+## Single Sign-On
+
+Nojoin can sign people in through an OpenID Connect provider such as Authentik, Keycloak or Entra ID. It is off until `NOJOIN_OIDC_ISSUER`, `NOJOIN_OIDC_CLIENT_ID` and `NOJOIN_OIDC_CLIENT_SECRET` are all set in `.env` and passed to the `api` service ([docker-compose.example.yml](../docker-compose.example.yml) passes them). If only some of the three are set, the api refuses to start and names the missing ones. Nojoin uses the authorization code flow with PKCE and accepts only asymmetrically signed ID tokens.
+
+### Setting Up the Provider
+
+Register Nojoin at the provider as a confidential web client with this redirect URI, built from `WEB_APP_URL`:
+
+```text
+https://<WEB_APP_URL host>/api/v1/login/oidc/callback
+```
+
+The issuer is the URL whose `/.well-known/openid-configuration` the provider publishes. The `api` container fetches that document and the signing keys, so it must be able to reach the issuer over the network.
+
+In Authentik:
+
+1. Create an **OAuth2/OpenID Provider** with client type **Confidential**, and add the redirect URI above under **Redirect URIs** (strict).
+2. Leave the default scope mappings (`openid`, `email`, `profile`). Authentik's `profile` mapping includes a `groups` claim with the names of the user's groups, so set `NOJOIN_OIDC_SCOPES=openid email profile`.
+3. Create an **Application** for the provider. Its slug forms the issuer: `https://<authentik host>/application/o/<slug>/`.
+4. Copy the client ID and secret into `.env`, then run `docker compose up -d api`.
+
+### Settings
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `NOJOIN_OIDC_ISSUER` | | The issuer URL. Must be `https://`, except `http://localhost` for testing. |
+| `NOJOIN_OIDC_CLIENT_ID`, `NOJOIN_OIDC_CLIENT_SECRET` | | The client registered at the provider. |
+| `NOJOIN_OIDC_DISPLAY_NAME` | `SSO` | The provider's name on the sign-in button and in messages. |
+| `NOJOIN_OIDC_SCOPES` | `openid profile email groups` | Space-separated. `openid` is always added. |
+| `NOJOIN_OIDC_USERNAME_CLAIM` | `preferred_username` | The claim a new account's username comes from. |
+| `NOJOIN_OIDC_GROUPS_CLAIM` | `groups` | The claim holding the user's group names. |
+| `NOJOIN_OIDC_ALLOWED_GROUPS` | | Comma-separated. When set, only members of at least one of these groups can sign in through the provider. |
+| `NOJOIN_OIDC_ADMIN_GROUPS` | | Comma-separated. When set, members become Admins and everyone else Users, at every sign-in. When empty, roles stay as administrators set them. |
+| `NOJOIN_OIDC_AUTO_CREATE` | `true` | `false` lets only accounts linked beforehand sign in through the provider. |
+| `NOJOIN_PASSWORD_LOGIN` | `enabled` | `enabled`, `owner_only` or `disabled`. See below. |
+
+### Accounts
+
+Nojoin matches a provider identity by its issuer and subject, never by email address, so an account at the provider cannot take over a Nojoin account that happens to share its email.
+
+- **New people.** With auto-create on, the first sign-in creates a User account named after the username claim. If that username is taken, Nojoin adds `-2`, `-3` and so on. Such an account has no password. Its owner cannot set one, and an administrator cannot give it one either. No account is created before first-run setup has made the owner, so single sign-on cannot take the place of setup.
+- **Existing accounts.** Someone who already has a Nojoin account links it under **Settings > Profile and security > Single sign-on** with the **Link** button, which carries the provider's name. The provider asks them to sign in again, so a session left open on a shared computer cannot be linked to someone else's identity. An account links to one identity, and an identity to one account. The password keeps working as long as the password policy allows it.
+- **Each sign-in** refreshes the account's email, display name and groups from the provider. If `NOJOIN_OIDC_ADMIN_GROUPS` changes someone's role, their other sessions end. An Owner's role never changes through the provider, so an empty or misconfigured admin group cannot lock the installation out. A deactivated account cannot sign in through the provider either.
+- **Taking access away** at the provider, such as removing someone from `NOJOIN_OIDC_ALLOWED_GROUPS`, stops their next sign-in through it. Sessions already open run until they expire, after at most 12 hours, and a password sign-in still works while the password policy allows it. To end someone's access at once, the setup account deactivates them in **Settings > Users and access**.
+
+### Password Sign-In
+
+`NOJOIN_PASSWORD_LOGIN` decides what the password form still does once SSO works:
+
+- `enabled` keeps passwords and invitation links working as before.
+- `owner_only` lets only Owners sign in with a password, as a way back in when the provider is down. Invitation links stop working, so new people arrive through the provider.
+- `disabled` turns the password form off for everyone. The api refuses to start with this value when SSO is not configured, since nobody could sign in. It also stops the setup account signing in with its password, so link that account to its identity first, or it cannot sign in at all.
+
+### Groups and Sharing
+
+The groups from the provider are also share targets. Someone sharing a meeting can pick any group they are a member of themselves, and the meeting is then shared with everyone who is in that group at their latest sign-in. Removing a person from a group at the provider takes effect the next time they sign in through it. Nojoin does not query the provider in between, and a password sign-in does not refresh the groups. Groups exist only for accounts that sign in through the provider. An account without a linked identity has none.
 
 ## Settings Structure
 

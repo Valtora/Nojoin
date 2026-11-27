@@ -18,6 +18,13 @@ from backend.models.speaker import RecordingSpeaker
 from backend.models.user import User
 from backend.processing.live_state import LIVE_BEHIND_LAG_MS, live_lane_lag_ms
 from backend.processing.pipeline_metrics import record_pipeline_metric
+from backend.services.recording_access import (
+    Access,
+    RecordingGrant,
+    require_person_in_reach,
+    require_recording,
+    resolve_grant,
+)
 from backend.utils.canonical_pipeline import (
     build_transient_utterance_payloads_from_segments,
     ensure_canonical_backfill,
@@ -85,8 +92,12 @@ async def get_transcript_utterances(
     after_revision: Optional[RevisionCursor] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.VIEW)),
 ):
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
     transcript = await _get_recording_transcript(db, recording.id)
 
     if transcript is None:
@@ -205,14 +216,18 @@ async def get_transcript_utterances(
     "/{recording_id}/utterances/{utterance_id}/text",
     response_model=TranscriptPublicRead,
 )
-async def update_transcript_utterance_text(
+async def update_transcript_utterance_text(  # noqa: PLR0913 - FastAPI dependencies are parameters
     recording_id: str,
     utterance_id: str,
     update: TranscriptUtteranceTextPatch,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.EDIT)),
 ):
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
     transcript = await _get_recording_transcript(db, recording.id)
 
     if transcript is None:
@@ -320,14 +335,18 @@ async def apply_canonical_utterance_text_update(  # noqa: PLR0913 - one keyword 
     "/{recording_id}/utterances/{utterance_id}/speaker",
     response_model=TranscriptPublicRead,
 )
-async def update_transcript_utterance_speaker(
+async def update_transcript_utterance_speaker(  # noqa: PLR0913 - FastAPI dependencies are parameters
     recording_id: str,
     utterance_id: str,
     update: TranscriptUtteranceSpeakerPatch,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.EDIT)),
 ):
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
     transcript = await _get_recording_transcript(db, recording.id)
 
     if transcript is None:
@@ -395,6 +414,9 @@ async def apply_canonical_utterance_speaker_update(  # noqa: PLR0913 - one keywo
     (source="mcp"), so the event log records which surface authored the
     edit while everything else stays identical.
     """
+    await require_person_in_reach(
+        db, recording, actor_user_id, update.global_speaker_id
+    )
     await _prepare_live_transcript_mutation(db, recording.id)
     await db.run_sync(
         lambda sync_session: ensure_canonical_backfill(sync_session, recording.id)
@@ -460,12 +482,13 @@ async def apply_canonical_utterance_speaker_update(  # noqa: PLR0913 - one keywo
     "/{recording_id}/utterances/{utterance_id}/locks",
     response_model=TranscriptPublicRead,
 )
-async def clear_utterance_locks(
+async def clear_utterance_locks(  # noqa: PLR0913 - FastAPI dependencies are parameters
     recording_id: str,
     utterance_id: str,
     expected_revision: Optional[int] = Query(default=None, ge=0),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.EDIT)),
 ):
     """Release an utterance's manual-edit locks.
 
@@ -474,7 +497,10 @@ async def clear_utterance_locks(
     again; the clearing itself is recorded in the edit log, so the audit
     trail of the original edit survives.
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
     transcript = await _get_recording_transcript(db, recording.id)
 
     if transcript is None:

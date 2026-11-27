@@ -245,6 +245,10 @@ class TranscriptUtteranceSplit(BaseModel):
 
 class NotesUpdate(BaseModel):
     notes: str
+    # The revision of the notes this edit started from (utils/notes_revision.py).
+    # When given and stale, the save is refused with 409 rather than overwrite
+    # someone else's edit. Absent, the save overwrites, as it always did.
+    base_revision: Optional[str] = Field(default=None, max_length=64)
 
 
 class MeetingEdgeFocusUpdate(BaseModel):

@@ -36,6 +36,7 @@ from backend.utils.generation_claim import (
     reported_generation_status,
 )
 from backend.utils.language_notice import language_notice
+from backend.utils.notes_revision import notes_revision
 from backend.utils.reprocess_publication import (
     reprocess_publication_complete,
     reprocess_publication_pending,
@@ -145,6 +146,10 @@ class TranscriptPublicRead(PublicModel):
     text: Optional[str] = None
     segments: list[dict[str, Any]] = Field(default_factory=list)
     notes: Optional[str] = None
+    # A token for the notes' content (backend/utils/notes_revision.py). A
+    # client editing them sends it back with its save, to be told about a
+    # concurrent edit instead of overwriting it.
+    notes_revision: Optional[str] = None
     meeting_edge_focus: Optional[str] = None
     meeting_edge_payload: Optional[dict[str, Any]] = None
     meeting_edge_status: str = "idle"
@@ -248,8 +253,25 @@ class LiveAINoticeRead(BaseModel):
     message: str
 
 
+class RecordingOwnerRead(BaseModel):
+    """Who owns a recording, shown to the people it is shared with."""
+
+    username: str
+    display_name: Optional[str] = None
+
+
 class RecordingPublicRead(PublicModel):
     id: str
+    # The caller's level on this recording: "owner", "edit" or "view"
+    # (backend/services/recording_access.py). The client hides what the level
+    # does not allow; the server enforces it regardless.
+    access: str = "owner"
+    # Filled for a caller who is not the owner, so the UI can say whose meeting
+    # it is. None for the owner's own recordings.
+    owner: Optional[RecordingOwnerRead] = None
+    # Whether the caller can leave this shared meeting: shared with them by
+    # name. A group share applies to the group, so its members cannot.
+    can_leave: bool = False
     created_at: datetime
     updated_at: datetime
     name: str
@@ -345,6 +367,29 @@ class RecordingsCalendarRead(BaseModel):
     day_counts: List[CalendarDashboardDayCountRead] = Field(default_factory=list)
 
 
+# The fields an owner keeps about a person in their library. Left out for
+# anyone else a meeting is shared with (services/recording_access.py).
+_CONTACT_FIELDS: dict[str, object] = {
+    "title": None,
+    "company": None,
+    "email": None,
+    "phone_number": None,
+    "notes": None,
+    "tags": [],
+}
+
+
+def _global_speaker_read(speaker: RecordingSpeaker) -> Optional[GlobalSpeakerRead]:
+    from backend.services.recording_access import viewer_owns_library
+
+    if speaker.global_speaker is None:
+        return None
+    read = GlobalSpeakerRead.model_validate(speaker.global_speaker)
+    if viewer_owns_library.get():
+        return read
+    return read.model_copy(update=_CONTACT_FIELDS)
+
+
 def serialize_recording_speaker(
     speaker: RecordingSpeaker,
     *,
@@ -376,11 +421,7 @@ def serialize_recording_speaker(
         name_last_edit_source=speaker.name_last_edit_source,
         name_source=speaker.name_source,
         name_pending=name_is_pending(speaker),
-        global_speaker=(
-            GlobalSpeakerRead.model_validate(speaker.global_speaker)
-            if speaker.global_speaker is not None
-            else None
-        ),
+        global_speaker=_global_speaker_read(speaker),
         library_voiceprint=(
             LibraryVoiceprintRead.from_update(library_update)
             if library_update is not None
@@ -419,6 +460,7 @@ def serialize_transcript(
             )
         ],
         notes=transcript.notes,
+        notes_revision=notes_revision(transcript.notes),
         meeting_edge_focus=transcript.meeting_edge_focus,
         meeting_edge_payload=transcript.meeting_edge_payload,
         meeting_edge_status=transcript.meeting_edge_status,
@@ -511,6 +553,9 @@ def serialize_recording(
     captured_audio_seconds: Optional[float] = None,
     live_audio_ms: Optional[int] = None,
     timeline_notes_list_signature: Optional[str] = None,
+    access: str = "owner",
+    owner: Optional[RecordingOwnerRead] = None,
+    can_leave: bool = False,
 ) -> RecordingPublicRead:
     transcript = None
     notice = None
@@ -560,6 +605,9 @@ def serialize_recording(
 
     return RecordingPublicRead(
         id=recording.public_id,
+        access=access,
+        owner=owner,
+        can_leave=can_leave,
         created_at=recording.created_at,
         updated_at=recording.updated_at,
         name=recording.name,

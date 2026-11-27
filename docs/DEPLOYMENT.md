@@ -326,7 +326,7 @@ MCP and telemetry:
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `MCP_ENABLED` | `true` | `false` turns off the built-in [MCP connector](MCP.md): `/mcp`, its OAuth discovery documents and the connector authorisation endpoints all return 404. |
-| `MCP_ANONYMOUS_DISCOVERY` | `true` | Answers the MCP handshake and tool listing without authentication, so clients that cannot start OAuth from a `401` (Codex Desktop) can connect. Only generic tool metadata is exposed, and no tool runs without a signed-in user. `false` requires authentication for every request. |
+| `MCP_ANONYMOUS_DISCOVERY` | `false` | `false` answers every unauthenticated `/mcp` request with `401`, so clients such as Claude detect that sign-in is required. `true` answers the MCP handshake and tool listing without authentication, for Codex Desktop setups that cannot start OAuth from a `401`. Only generic tool metadata is exposed and no tool runs without a signed-in user, but Claude then no longer detects that sign-in is required ([MCP.md](MCP.md#anonymous-discovery)). |
 | `NOJOIN_TELEMETRY_ENABLED` | Empty | Empty sends the daily install heartbeat and leaves usage diagnostics to **Settings > Privacy**. `false` stops both, and `true` opts in to both. Either value makes the setup wizard's checkbox and the Settings toggle read-only, and suppresses the one-time admin notice. The heartbeat goes out within fifteen minutes of starting, so set `false` before the first start if nothing may ever be sent. See [TELEMETRY.md](TELEMETRY.md). |
 | `NOJOIN_TELEMETRY_ENDPOINT` | Empty | Test override for the diagnostics ingest URL. The heartbeat goes to `heartbeat` beside it. Not in `.env.example`. |
 

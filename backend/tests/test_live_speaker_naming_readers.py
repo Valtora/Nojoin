@@ -29,6 +29,7 @@ from backend.tests.sqlite_schemas import (
     RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
     RECORDING_SPEAKERS_SCHEMA,
     RECORDINGS_SCHEMA,
+    SHARING_SCHEMAS,
     SPEAKER_CORRECTION_EVENTS_SCHEMA,
     SPEAKER_NAME_EVENTS_SCHEMA,
     TIMELINE_NOTES_SCHEMA,
@@ -71,6 +72,7 @@ def session():
             SPEAKER_NAME_EVENTS_SCHEMA,
             TIMELINE_NOTES_SCHEMA,
             CALENDAR_EVENTS_SCHEMA,
+            *SHARING_SCHEMAS,
         ):
             connection.execute(text(schema))
         connection.execute(

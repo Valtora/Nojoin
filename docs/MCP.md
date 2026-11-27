@@ -17,15 +17,15 @@ Set `MCP_ENABLED=false` in `.env` and restart Nojoin. The `/mcp` endpoint, the O
 
 ## Anonymous Discovery
 
-Some clients, Codex Desktop among them, cannot start OAuth when the protocol handshake answers `401`. By default `/mcp` therefore answers `initialize`, `ping` and the tool listing without a token, and an unauthenticated tool call gets an in-band authentication challenge naming the scope it needs. All this exposes is the generic tool metadata listed under [Available Tools](#available-tools). No tool runs, no user data is reachable, every other unauthenticated request still gets `401`, and the anonymous surface is rate limited per client IP.
+By default every unauthenticated request to `/mcp` gets `401` with a `WWW-Authenticate` challenge pointing at Nojoin's OAuth discovery documents. That tells a client each user must sign in before any tool can be used: Claude's **Add custom connector** dialog marks **Sign in now** as **Detected**, and Claude Code opens the sign-in itself.
 
-Set `MCP_ANONYMOUS_DISCOVERY=false` and restart to answer `401` to every unauthenticated request. Clients must then start OAuth from the `401` itself, which Claude can do and Codex Desktop cannot.
+Codex Desktop cannot start OAuth from that `401` on its own, so mark the server for OAuth in Codex as [Connect ChatGPT or Codex](#connect-chatgpt-or-codex-desktop-app) shows. Where that is not possible, set `MCP_ANONYMOUS_DISCOVERY=true` in `.env` and restart. `/mcp` then answers `initialize`, `ping` and the tool listing without a token, and an unauthenticated tool call gets an in-band authentication challenge naming the scope it needs. All this exposes is the generic tool metadata listed under [Available Tools](#available-tools). No tool runs, no user data is reachable, every other unauthenticated request still gets `401`, and the anonymous surface is rate limited per client IP. Claude no longer detects that sign-in is required, though, so anyone adding the connector to Claude must choose **Sign in now** themselves.
 
 ## Connect Claude (claude.ai, Claude Desktop, Cowork)
 
 1. In Claude, open **Settings → Connectors → Add custom connector**.
-2. Enter a name such as `Nojoin` and the URL `https://your-nojoin-domain/mcp`.
-3. Leave the OAuth Client ID and Client Secret empty. Claude registers itself with Nojoin.
+2. Enter a name such as `Nojoin` and the URL `https://your-nojoin-domain/mcp`, then select **Continue** if the dialog shows it.
+3. Under **Authentication**, keep **Sign in now**, and under **OAuth client**, keep **Register automatically**. Claude marks both **Detected**. Leave any client ID and secret fields empty, since Claude registers itself with Nojoin. Nojoin does not support **Use Claude's published identity**.
 4. Select **Add**, then **Connect**. On Nojoin's consent page, sign in if asked, review the access (it includes the write tools), and select **Allow**. If your account must change its password first, Nojoin takes you to do that and then back to the consent page. The change signs out every session, so sign in there with the new password. If you have not yet accepted Nojoin's terms of use, the consent page shows them first and carries on once you accept.
 
 A connector added to a claude.ai account also works in Claude Desktop and Cowork on the same account.
@@ -43,9 +43,18 @@ Claude Code finds the OAuth flow itself and opens a browser for the same sign-in
 OpenAI renamed the Codex desktop app to ChatGPT, but its settings, CLI and file paths still say Codex, so the steps below do too.
 
 1. Open **Settings → MCP servers** and select **Add server**.
-2. Enter a name such as `nojoin`, choose **Streamable HTTP** (STDIO is for servers Codex runs locally), and enter `https://your-nojoin-domain/mcp`. Leave the bearer-token and header fields empty.
-3. Save, then select **Restart**. Codex probes the server at startup through [anonymous discovery](#anonymous-discovery).
-4. Select **Authenticate** in the server list and complete the same sign-in and consent as for Claude. Until then, tool calls return an authentication challenge.
+2. Enter a name such as `nojoin`, choose **Streamable HTTP** (STDIO is for servers Codex runs locally), and enter `https://your-nojoin-domain/mcp`. Leave the bearer-token and header fields empty, then save.
+3. Mark the server for OAuth, because Codex does not start sign-in from Nojoin's `401` by itself. Either run `codex mcp login nojoin` with the Codex CLI, or add `auth = "oauth"` to the server's entry in `~/.codex/config.toml`, which the desktop app, CLI and IDE extension share:
+
+   ```toml
+   [mcp_servers.nojoin]
+   url = "https://your-nojoin-domain/mcp"
+   auth = "oauth"
+   ```
+
+4. Select **Restart**, then **Authenticate** in the server list, and complete the same sign-in and consent as for Claude. `codex mcp login` opens that sign-in itself.
+
+If neither works for your Codex build, an administrator can turn on [anonymous discovery](#anonymous-discovery). Codex then probes the server at startup and offers **Authenticate**, and until you authenticate its tool calls return an authentication challenge.
 
 The consent page heading, "Connect … to Nojoin", shows the `client_name` the app registered with, exactly as the app sent it. The app still registers as `Codex`, so its consent page and its entry in **Settings → Integrations → Connected apps** say Codex. Any client can register under any name, so check the "You will be returned to" host on the consent page before approving.
 
@@ -59,25 +68,19 @@ Remove the stored credentials so Codex starts again:
 - Desktop only: quit Codex, then delete the server's entry under the **Codex MCP Credentials** service in the OS keychain (on Windows, Credential Manager → Windows Credentials, secret name starting `MCP_OAUTH`), or delete `~/.codex/.credentials.json` if it exists. That file holds every MCP server's credentials but not the ChatGPT sign-in. Restart the app.
 - Quickest: delete the server in Codex and add the same URL under a different name. Credentials are keyed by name, so **Authenticate** appears after a restart.
 
-If **Authenticate** still never appears from a clean state, mark the server for OAuth in `~/.codex/config.toml` (shared by the desktop app, CLI and IDE extension) and restart, or run `codex mcp login nojoin`:
-
-```toml
-[mcp_servers.nojoin]
-url = "https://your-nojoin-domain/mcp"
-auth = "oauth"
-```
+If **Authenticate** still never appears from a clean state, check that the server is marked for OAuth (step 3 above) and restart, or run `codex mcp login nojoin`.
 
 Some Codex Desktop builds (seen on 0.125.0-alpha.3) complete sign-in but never load the server's tools, reporting `auth_status` as `unsupported`. The same token works against the server directly, so update Codex rather than reconfiguring Nojoin.
 
 ## Available Tools
 
-Thirty-two tools: thirteen read and nineteen write. Opposites share a row, so the table has fewer rows than tools. Every tool acts only on data owned by the account that authorised the connection.
+Thirty-two tools: thirteen read and nineteen write. Opposites share a row, so the table has fewer rows than tools. Every tool acts for the account that authorised the connection, with the same access it has in the web app: its own meetings, and the meetings shared with it ([USAGE.md](USAGE.md#sharing-a-meeting)). On a meeting shared to view, the read tools work and the write tools are refused. On one shared to edit, the tools that change the transcript, speakers, notes, documents or name work as well, and the actions only an owner may take are refused. Tags, People and tasks stay the account's own.
 
-Two write tools spend your AI provider quota, which undoing their result does not refund: `regenerate_notes`, and the costlier `analyse_meeting`, whose description tells an assistant to ask before running it.
+Two write tools spend your AI provider quota, which undoing their result does not refund: `regenerate_notes`, and the costlier `analyse_meeting`, whose description tells an assistant to ask before running it. On a meeting someone shared with you, both run on your own AI settings and quota, not the owner's.
 
 | Tool | Scope | Description |
 | --- | --- | --- |
-| `list_recordings` | `mcp:read` | List and search recordings by text and date, including archived and binned ones. Each result reports processing state (`status`, `transcript_status`, `notes_status`), `updated_at`, the `transcript_revision` cursor and, for searches, a best-effort `match_field` hint. |
+| `list_recordings` | `mcp:read` | List and search recordings by text and date, including archived and binned ones and those shared with you. Each result reports `access` (`owner`, `edit` or `view`), `owner` on a shared meeting, processing state (`status`, `transcript_status`, `notes_status`), `updated_at`, the `transcript_revision` cursor and, for searches, a best-effort `match_field` hint. |
 | `get_transcript` | `mcp:read` | The speaker-attributed transcript, formatted for reading. |
 | `get_transcript_utterances` | `mcp:read` | The transcript as structured utterances: stable ids, millisecond timestamps, edit provenance, and a revision cursor with tombstones for incremental sync. |
 | `search_context` | `mcp:read` | Semantic search across every transcript, set of AI notes and attached document, with the recording and a timestamp or page on each hit. A file on one of your notes is searched only while its **Use in notes** is on. |
@@ -134,5 +137,6 @@ Treat the cursor as opaque and the response as additive, since new fields may ap
 ## Troubleshooting
 
 - **Claude cannot reach the server**: from outside your network, `https://your-domain/.well-known/oauth-protected-resource/mcp` should return JSON. If it returns the Nojoin web app, your edge proxy is not sending `/.well-known/oauth-*` and `/mcp` to the API service.
+- **Claude added the connector without asking you to sign in**: it was added with **No sign-in**, so its tools cannot reach your library. Claude cannot change a connector's authentication once it is added, so remove the connector and add it again with **Sign in now** and **Register automatically**.
 - **The consent page says the authorisation request is invalid**: the client's registration is gone, for example after a database restore, since backups do not carry registrations. Remove and re-add the connector.
 - **A tool returned unexpected or empty results**: the API logs one line per tool call with the tool name, the user id, a redacted argument summary, the result shape and the duration, for example `mcp tool list_recordings ok user=1 limit=20 -> list:12 (18ms)`. Rejected calls log at `WARNING` and failures at `ERROR` with a traceback. Follow them with `docker compose logs -f api`. A refused call gives the assistant Nojoin's reason, the message the web app shows for the same refusal, such as `Recording not found`, and never the traceback. Free text and contact details appear only as lengths and counts, so the log holds no meeting content.

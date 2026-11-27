@@ -21,6 +21,13 @@ from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.processing.pipeline_metrics import record_pipeline_metric
+from backend.services.recording_access import (
+    Access,
+    RecordingGrant,
+    require_person_in_reach,
+    require_recording,
+    resolve_grant,
+)
 from backend.utils.canonical_pipeline import (
     apply_compatibility_segment_replace,
     ensure_canonical_backfill,
@@ -83,18 +90,25 @@ async def _apply_segment_replace(
 
 
 @router.put("/{recording_id}/segments/{segment_index}")
-async def update_segment_speaker(
+async def update_segment_speaker(  # noqa: PLR0913 - FastAPI dependencies are parameters
     recording_id: str,
     segment_index: int,
     update: TranscriptSegmentSpeakerUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.EDIT)),
 ):
     """
     Update the speaker for a specific transcript segment.
     Also updates the speaker embedding associations using the audio from this segment.
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
+    await require_person_in_reach(
+        db, recording, current_user.id, update.global_speaker_id
+    )
 
     stmt = (
         select(Transcript)
@@ -279,7 +293,7 @@ async def update_segment_speaker(
     if target_label is None and update.global_speaker_id is not None:
         stmt = select(GlobalSpeaker).where(
             GlobalSpeaker.id == update.global_speaker_id,
-            GlobalSpeaker.user_id == current_user.id,
+            GlobalSpeaker.user_id == recording.user_id,
         )
         result = await db.execute(stmt)
         global_speaker = result.scalar_one_or_none()
@@ -454,17 +468,21 @@ async def update_segment_speaker(
 @router.put(
     "/{recording_id}/segments/{segment_index}/text", response_model=TranscriptPublicRead
 )
-async def update_transcript_segment_text(
+async def update_transcript_segment_text(  # noqa: PLR0913 - FastAPI dependencies are parameters
     recording_id: str,
     segment_index: int,
     update: TranscriptSegmentTextUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.EDIT)),
 ):
     """
     Update the text content of a specific transcript segment.
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
 
     stmt = (
         select(Transcript)
@@ -576,12 +594,16 @@ async def find_and_replace(
     replace_request: FindReplaceRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.EDIT)),
 ):
     """
     Find and replace text across the entire transcript AND meeting notes.
     This ensures consistency between the diarized transcript and generated notes.
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
 
     stmt = (
         select(Transcript)
@@ -660,12 +682,16 @@ async def update_transcript_segments(
     update: TranscriptSegmentsUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    grant: RecordingGrant = Depends(require_recording(Access.EDIT)),
 ):
     """
     Bulk update all segments of a transcript.
     Useful for Undo/Redo operations involving multiple segments.
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    grant = await resolve_grant(
+        grant, db, recording_id, current_user, owned=_get_owned_recording
+    )
+    recording = grant.recording
 
     stmt = (
         select(Transcript)

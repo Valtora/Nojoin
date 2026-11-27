@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { canEditRecording } from "@/lib/sharing/access";
 import { AlertCircle, RefreshCw } from "lucide-react";
 
 import ReprocessDialog from "@/components/ReprocessDialog";
@@ -138,7 +139,11 @@ export default function TranscriptSection({
   // defer its old row even after that read. Wait for the displayed replacement.
   const awaitingPublication = (!transcriptIsAuthoritative || deferredTranscriptUtteranceIds.length > 0) &&
     hasRetainedPublication;
-  const readOnly = (isRecordingInFlight(recording) || awaitingPublication) && !activeCapture;
+  const canEditNotes = canEditRecording(recording);
+  // A meeting shared with the caller to view only is never editable here.
+  const readOnly =
+    !canEditRecording(recording) ||
+    ((isRecordingInFlight(recording) || awaitingPublication) && !activeCapture);
   const transcriptStatus = recording.transcript?.transcript_status;
   // The live presentation is a capture's own run: recording, paused, or
   // processing what it heard (only capture start makes a "processing"
@@ -353,12 +358,13 @@ export default function TranscriptSection({
             onActiveEditUtteranceChange={onActiveEditUtteranceChange}
             pendingRemoteUtteranceIds={deferredTranscriptUtteranceIds}
             timelineNotes={notes}
-            onAddNote={addNote}
+            // Viewers read the notes but cannot add, change or move them.
+            onAddNote={canEditNotes ? addNote : undefined}
             onRetryNote={outbox.retry}
             onDiscardNote={discardNote}
-            onEditNote={editNote}
-            onDeleteNote={deleteNote}
-            onMoveNote={!liveTranscript || transcriptSegments.some((segment) => segment.settling_required) ? moveNote : undefined}
+            onEditNote={canEditNotes ? editNote : undefined}
+            onDeleteNote={canEditNotes ? deleteNote : undefined}
+            onMoveNote={canEditNotes && (!liveTranscript || transcriptSegments.some((segment) => segment.settling_required)) ? moveNote : undefined}
           />
         </div>
       ) : (

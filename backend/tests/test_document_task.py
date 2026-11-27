@@ -1031,3 +1031,45 @@ def test_an_image_pillow_cannot_open_says_so_in_its_error(parse_file, tmp_path):
         "This image could not be read: the file is not a picture Nojoin can open."
     )
     assert backend.attempts == 0
+
+
+def test_visual_analysis_runs_on_the_settings_of_whoever_asked(monkeypatch) -> None:
+    """An editor's upload or reparse of a shared meeting's document runs on the
+    editor's AI settings; an automatic run, with no one asking, on the owner's."""
+    import backend.worker.tasks.documents as documents_task
+
+    owner_settings = {"tone": "owner"}
+    editor_settings = {"tone": "editor"}
+
+    class _Recording:
+        user_id = 1
+
+    class _User:
+        def __init__(self, settings):
+            self.settings = settings
+
+    class _Session:
+        def get(self, model, pk):
+            if model is documents_task.Recording:
+                return _Recording()
+            return _User(owner_settings if pk == 1 else editor_settings)
+
+    class _Doc:
+        recording_id = 5
+
+    asked: list[tuple[object, dict]] = []
+
+    class _Config:
+        def missing_configuration_message(self):
+            return "no provider"
+
+    def fake_resolve(session, user_settings, *, user_id=None, **kwargs):
+        asked.append((user_id, user_settings))
+        return _Config()
+
+    monkeypatch.setattr(documents_task, "resolve_llm_config", fake_resolve)
+
+    documents_task._resolve_backend_for_document(_Session(), _Doc(), 2)
+    documents_task._resolve_backend_for_document(_Session(), _Doc())
+
+    assert asked == [(2, editor_settings), (1, owner_settings)]

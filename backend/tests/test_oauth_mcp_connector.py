@@ -27,6 +27,7 @@ from backend.models.invitation import (
     Invitation,  # noqa: F401 - register relationship target
 )
 from backend.models.user import User
+from backend.tests.sqlite_schemas import SHARING_SCHEMAS
 
 TEST_ORIGIN = "https://nojoin.example.com"
 CLAUDE_CALLBACK = "https://claude.ai/api/mcp/auth_callback"
@@ -141,6 +142,8 @@ async def session_maker():
     )
     async with engine.begin() as conn:
         for stmt in SCHEMA_STATEMENTS:
+            await conn.execute(text(stmt))
+        for stmt in SHARING_SCHEMAS:
             await conn.execute(text(stmt))
     factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     yield factory
@@ -1116,13 +1119,76 @@ def anonymous_rate_limit_fallback(monkeypatch):
     rate_limit_utils._fallback_windows.clear()
 
 
+@pytest.fixture
+def anonymous_discovery_enabled(monkeypatch):
+    """Opt in to anonymous discovery, which is off by default."""
+    monkeypatch.setenv("MCP_ANONYMOUS_DISCOVERY", "true")
+
+
 def _jsonrpc(method: str, request_id: int = 1) -> dict:
     return {"jsonrpc": "2.0", "id": request_id, "method": method, "params": {}}
 
 
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (None, False),
+        ("", False),
+        ("  ", False),
+        ("false", False),
+        ("0", False),
+        ("off", False),
+        ("ture", False),
+        ("true", True),
+        ("TRUE", True),
+        (" 1 ", True),
+        ("yes", True),
+        ("on", True),
+    ],
+)
+def test_anonymous_discovery_flag_is_off_unless_explicitly_true(
+    monkeypatch, raw, expected
+):
+    """Unset, empty and unrecognised values all keep the strict default."""
+    from backend.utils.mcp_flags import is_mcp_anonymous_discovery_enabled
+
+    if raw is None:
+        monkeypatch.delenv("MCP_ANONYMOUS_DISCOVERY", raising=False)
+    else:
+        monkeypatch.setenv("MCP_ANONYMOUS_DISCOVERY", raw)
+    assert is_mcp_anonymous_discovery_enabled() is expected
+
+
+@pytest.mark.anyio
+async def test_anonymous_initialize_gets_401_challenge_by_default(
+    monkeypatch, fixed_origin, anonymous_rate_limit_fallback
+):
+    """With the variable unset, an anonymous handshake gets the 401 challenge.
+
+    MCP clients probe the handshake to decide whether a server needs sign-in;
+    a 401 carrying the RFC 9728 pointer is what makes Claude detect "Sign in
+    now" rather than a server that works without an account.
+    """
+    monkeypatch.delenv("MCP_ANONYMOUS_DISCOVERY", raising=False)
+    seen: dict = {}
+    transport = ASGITransport(app=_build_mcp_test_app(seen))
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        responses = [
+            await c.post("/", json=_jsonrpc(method))
+            for method in ("initialize", "tools/list", "tools/call")
+        ]
+    for response in responses:
+        assert response.status_code == 401
+        assert response.headers["www-authenticate"] == (
+            f'Bearer resource_metadata="{TEST_ORIGIN}'
+            '/.well-known/oauth-protected-resource/mcp"'
+        )
+    assert "user" not in seen
+
+
 @pytest.mark.anyio
 async def test_anonymous_allowlist_passes_bootstrap_methods(
-    fixed_origin, anonymous_rate_limit_fallback
+    fixed_origin, anonymous_discovery_enabled, anonymous_rate_limit_fallback
 ):
     """The five bootstrap methods reach the app anonymously, as no user."""
     for method in (
@@ -1141,7 +1207,9 @@ async def test_anonymous_allowlist_passes_bootstrap_methods(
 
 
 @pytest.mark.anyio
-async def test_anonymous_unclassifiable_requests_stay_401(fixed_origin):
+async def test_anonymous_unclassifiable_requests_stay_401(
+    fixed_origin, anonymous_discovery_enabled
+):
     """Anything the allowlist cannot positively classify keeps the strict 401,
     and every challenge now carries the scope hint."""
     transport = ASGITransport(app=_build_mcp_test_app({}))
@@ -1174,7 +1242,10 @@ async def test_anonymous_unclassifiable_requests_stay_401(fixed_origin):
 
 @pytest.mark.anyio
 async def test_anonymous_requests_are_rate_limited(
-    monkeypatch, fixed_origin, anonymous_rate_limit_fallback
+    monkeypatch,
+    fixed_origin,
+    anonymous_discovery_enabled,
+    anonymous_rate_limit_fallback,
 ):
     monkeypatch.setattr(mcp_auth, "_ANONYMOUS_RATE_LIMIT", 2)
     transport = ASGITransport(app=_build_mcp_test_app({}))
@@ -1193,7 +1264,7 @@ async def test_anonymous_requests_are_rate_limited(
 async def test_anonymous_discovery_disabled_restores_strict_401(
     monkeypatch, fixed_origin
 ):
-    """Flag off: today's exact pre-feature behaviour, scope hint included."""
+    """Explicitly off: the strict 401, with no scope hint."""
     monkeypatch.setenv("MCP_ANONYMOUS_DISCOVERY", "false")
     transport = ASGITransport(app=_build_mcp_test_app({}))
     async with AsyncClient(transport=transport, base_url="http://testserver") as c:
@@ -1266,9 +1337,13 @@ def _assert_anonymous_discovery_results(
         )
         assert "Authentication required" in challenge_text, name
 
-    # With the compatibility flag off, the same anonymous request gets the
-    # strict transport-level 401 again.
+    # With the compatibility flag back at its default (off), the same
+    # anonymous handshake gets the strict transport-level 401 again.
     assert anon_disabled.status_code == 401
+    assert anon_disabled.headers["www-authenticate"] == (
+        f'Bearer resource_metadata="{TEST_ORIGIN}'
+        '/.well-known/oauth-protected-resource/mcp"'
+    )
 
 
 @pytest.mark.anyio
@@ -1278,11 +1353,13 @@ async def test_mcp_protocol_tools_list_end_to_end(  # noqa: PLR0913 - one fixtur
     isolated_keyring,
     session_maker,
     test_user: User,
+    anonymous_discovery_enabled,
     anonymous_rate_limit_fallback,
 ):
     """Full stack: auth middleware -> MCP SDK streamable HTTP -> tools/list.
 
-    Also hosts the anonymous-discovery protocol phases: the SDK allows one
+    Also hosts the anonymous-discovery protocol phases, run with the flag
+    switched on and then back at its default: the SDK allows one
     session-manager .run() per MCPServer instance and therefore one such
     context per test process, so every phase that needs the real MCP app
     shares this test's context. The anonymous sweep below makes one
@@ -1406,13 +1483,23 @@ async def test_mcp_protocol_tools_list_end_to_end(  # noqa: PLR0913 - one fixtur
                 assert call.status_code == 200, (tool["name"], call.text)
                 anon_calls[tool["name"]] = call.json()["result"]
 
-            monkeypatch.setenv("MCP_ANONYMOUS_DISCOVERY", "false")
+            # Back to the default (variable unset): the handshake a client
+            # probes to detect sign-in gets the transport-level 401.
+            monkeypatch.delenv("MCP_ANONYMOUS_DISCOVERY")
             anon_disabled = await c.post(
                 "/mcp",
                 headers=anon_headers,
-                json={"jsonrpc": "2.0", "id": 999, "method": "ping"},
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 999,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2025-06-18",
+                        "capabilities": {},
+                        "clientInfo": {"name": "anon", "version": "0"},
+                    },
+                },
             )
-            monkeypatch.delenv("MCP_ANONYMOUS_DISCOVERY")
 
     assert response.status_code == 200, response.text
     body = response.json()

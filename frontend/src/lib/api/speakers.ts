@@ -289,3 +289,23 @@ export const scanMatches = async (
   const response = await api.post(`/speakers/${speakerId}/scan-matches`);
   return response.data;
 };
+
+/**
+ * The people the caller may pick for a meeting's speakers. For the owner that
+ * is the whole People library; for someone the meeting is shared with, only
+ * the owner's people already in the meeting, without their contact details.
+ */
+export const getSpeakerCandidates = async (
+  recordingId: RecordingId,
+): Promise<GlobalSpeaker[]> => {
+  const response = await api.get<{ id: number; name: string; color?: string | null }[]>(
+    `/speakers/recordings/${recordingId}/speaker-candidates`,
+  );
+  return response.data.map((person) => ({
+    id: person.id,
+    name: person.name,
+    color: person.color ?? undefined,
+    created_at: "",
+    updated_at: "",
+  }));
+};

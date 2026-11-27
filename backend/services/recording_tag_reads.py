@@ -19,11 +19,13 @@ from backend.utils.db_batching import bind_batches
 
 
 async def load_tags_by_recording(
-    db: AsyncSession, recording_ids: Sequence[int]
+    db: AsyncSession, recording_ids: Sequence[int], *, user_id: int | None = None
 ) -> dict[int, list[TagRead]]:
     """Each recording's tags, keyed by its internal id, in the order applied.
 
-    A recording with no tags has no key. An empty ``recording_ids`` runs no
+    Tags are personal: with ``user_id`` only that user's tags are read, so
+    someone a meeting is shared with sees their own tags on it and not the
+    owner's. A recording with no tags has no key. An empty ``recording_ids`` runs no
     query. Each id is one bind parameter, so a page larger than the bind limit
     is read in slices (backend/utils/db_batching.py); any real page is one.
     """
@@ -31,12 +33,15 @@ async def load_tags_by_recording(
     reads: dict[int, TagRead] = {}
     unique_ids = list(dict.fromkeys(recording_ids))
     for id_batch in bind_batches(unique_ids):
-        result = await db.execute(
+        statement = (
             select(RecordingTag.recording_id, RecordingTag.tag_id, Tag)
             .join(Tag, col(Tag.id) == col(RecordingTag.tag_id))
             .where(col(RecordingTag.recording_id).in_(id_batch))
             .order_by(col(RecordingTag.recording_id), col(RecordingTag.id))
         )
+        if user_id is not None:
+            statement = statement.where(col(Tag.user_id) == user_id)
+        result = await db.execute(statement)
         for recording_id, tag_id, tag in result.all():
             read = reads.get(tag_id)
             if read is None:

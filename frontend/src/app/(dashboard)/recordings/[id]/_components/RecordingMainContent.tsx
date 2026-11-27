@@ -1,5 +1,7 @@
 "use client";
 
+import type { NotesSaveOutcome } from "@/lib/notesSave";
+import { canEditRecording } from "@/lib/sharing/access";
 import { ButtonBase } from "@/components/ui/nativeBases";
 import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import { ChevronsLeft, ChevronsRight } from "lucide-react";
@@ -110,7 +112,10 @@ interface RecordingMainContentProps {
   isGeneratingNotes: boolean;
   notesCanUndo: boolean;
   notesCanRedo: boolean;
-  onNotesChange: (notes: string) => void;
+  onNotesChange: (
+    notes: string,
+    baseRevision: () => string | undefined,
+  ) => Promise<NotesSaveOutcome> | void;
   onGenerateNotes: (notesTemplateId?: number | null) => Promise<void>;
   onNotesUndo: () => void;
   onNotesRedo: () => void;
@@ -395,9 +400,12 @@ export default function RecordingMainContent({
         <DocumentsSection
           active={activePanel === "documents"}
           recordingId={recording.id}
+          canEdit={canEditRecording(recording)}
+          canReparse={canEditRecording(recording)}
         />
 
         <AnalyticsSection
+          canGenerate={canEditRecording(recording)}
           inFlight={inFlight}
           active={activePanel === "analytics"}
           recordingId={recording.id}
