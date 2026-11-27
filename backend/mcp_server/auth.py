@@ -10,14 +10,15 @@ An unauthenticated request receives the RFC 9728 challenge pointing at the
 protected-resource metadata, which is what lets MCP clients bootstrap the
 whole OAuth flow from a bare URL.
 
-Some clients (Codex Desktop) never start that flow from a 401, so when
-``MCP_ANONYMOUS_DISCOVERY`` is enabled the middleware lets a fixed
-allowlist of protocol-bootstrap JSON-RPC methods through anonymously —
-``tools/call`` included, but only so the tool gate in
-:mod:`backend.mcp_server.server` can answer it with an in-band
-authentication challenge instead of an HTTP error. Everything else, and
-every request the allowlist check cannot positively classify, still gets
-the strict 401.
+Some clients (Codex Desktop) never start that flow from a 401, so when an
+operator enables ``MCP_ANONYMOUS_DISCOVERY`` (off by default, because a
+client that sees the handshake succeed anonymously concludes the server
+needs no sign-in) the middleware lets a fixed allowlist of
+protocol-bootstrap JSON-RPC methods through anonymously — ``tools/call``
+included, but only so the tool gate in :mod:`backend.mcp_server.server`
+can answer it with an in-band authentication challenge instead of an HTTP
+error. Everything else, and every request the allowlist check cannot
+positively classify, still gets the strict 401.
 """
 
 import json
@@ -223,8 +224,8 @@ class MCPAuthMiddleware:
         if not token:
             # Anonymous compatibility path (Codex Desktop cannot start OAuth
             # from a 401): allow only the bootstrap allowlist through, and
-            # only when the operator has not switched the mode off. GET (the
-            # SSE stream) and everything unclassifiable stays a strict 401.
+            # only when the operator has switched the mode on. GET (the SSE
+            # stream) and everything unclassifiable stays a strict 401.
             if (
                 is_mcp_anonymous_discovery_enabled()
                 and scope.get("method") == "POST"
