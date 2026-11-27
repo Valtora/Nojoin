@@ -345,14 +345,7 @@ A voiceprint that cannot be rebuilt, because its meeting's audio was removed or 
 - **Analytics** reports how the conversation went, measured from the transcript and audio, with an optional AI reading of what was discussed.
 - **Search** in the recordings list and **Search** and **Find & Replace** in the transcript are covered under [Recordings List](#recordings-list) and [Transcript And Playback](#transcript-and-playback).
 
-While notes generate, **Cancel** replaces the structure arrow beside the busy
-button, including automatic notes during processing. Cancel keeps your current
-notes and edits and restores **Generate Notes** or **Regenerate Notes** immediately.
-The current model request, including its automatic retries, may finish before work
-stops; its answer is discarded. No further parts, repairs or new model requests are
-started. Cancelling automatic notes
-leaves the transcript intact. If the recording itself is still processing, it
-finishes normally after that request returns; you can generate new notes meanwhile.
+While notes generate, **Cancel** takes the place of the structure arrow beside the busy button, for **Regenerate Notes** and for the automatic notes written during processing. It keeps the notes you had, with any edits, and offers **Generate Notes** or **Regenerate Notes** again at once. A model request already under way, with the provider's own retries, may run to its end, and its answer is discarded; no further part or request starts. A meeting still processing finishes once that request returns, and you can generate new notes meanwhile. If two tabs press **Generate Notes** at once, one run starts and both show it.
 
 ### Analytics
 

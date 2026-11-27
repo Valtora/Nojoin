@@ -53,37 +53,11 @@ Celery acknowledges a task when a worker takes it, so a task lost with its worke
 
 ### Notes Run Ownership And Cancellation
 
-A notes run may mutate generation-owned state only while the transcript's stored
-`notes_status` is `generating` and its stored `notes_run_id` equals the run's token.
-[The shared ownership helper](../backend/utils/generation_run.py) enforces this invariant
-for manual and automatic notes: acquisition is serialised under a transcript row
-lock, queued workers adopt the dispatched UUID rather than claim again, and progress
-and heartbeat updates use the same predicate. Completion and failure refresh and
-lock that row before any ORM mutation or autoflush. Automatic title, speaker
-suggestions, notes, template provenance and document freshness publish within that
-fence; search indexing starts only after successful publication. Reprocessing
-retires old tokens, and final ASR publication preserves a live notes claim.
-The helpers take an explicit run kind describing its fields; notes is the only
-tokenised consumer. Before the fresh inline ownership read, ASR flushes its final
-projection. Skipping an existing run leaves that transaction for the caller to commit.
+A notes run may change the notes, their status, step and error only while the transcript's `notes_status` is `generating` and its `notes_run_id` is the run's own ([backend/utils/generation_run.py](../backend/utils/generation_run.py)). The rule covers Regenerate Notes and automatic notes alike. A run is claimed under the transcript's row lock, so two tabs pressing Generate start one run. The worker adopts the id it was dispatched with and never claims again, and a task queued without one exits. The heartbeat and the progress writer renew only a claim that is still the run's own. Completion and failure lock and re-read the row before they change it, and the automatic title, speaker suggestions, notes, template provenance and document freshness are published under that lock; search indexing starts only once the notes are published. Reprocessing retires a run, and final transcript publication leaves a live notes claim alone. The pipeline flushes its final transcript before the inline notes stage takes its locked read, and a stage that finds another run active leaves the pipeline's transaction for the pipeline to commit. The helpers take a `RunKind` naming its fields; notes is the only kind with a run id.
 
-`POST /transcripts/{id}/notes/cancel` accepts the expected `notes_run_id` within the
-owned-recording boundary. It retires a matching claim, clears progress and the
-notes-owned error, preserves current content and independent edits, and bumps the
-change sequence. Nonblank notes return to `completed`; otherwise they return to
-`pending`. Repeating Cancel is a successful no-op; a stale token cannot cancel a
-different active run and receives 409 with its current lifecycle state. Public
-reads expose the token only while the reported status is `generating`.
+`POST /transcripts/{id}/notes/cancel` takes the run's `notes_run_id`, for a recording the caller owns. A matching run is retired: its step and the notes error clear, the notes and any edits made meanwhile stay, the change sequence moves, and the status goes back to `completed` when notes remain or `pending` when they do not. Cancelling again succeeds and changes nothing. An id that no longer matches, while another run is active, gets 409 with that run's state, so it cannot cancel the run that replaced it. Reads carry the id only while the reported status is `generating`.
 
-Ownership is checked before every application model request, including parts,
-repairs, application retries and secondary providers. SDK retries remain part of
-the in-flight request. Losing ownership is a neutral outcome,
-never a provider failure or a reason to fall back. An in-flight request may finish;
-its result cannot publish. Deferred cancellation leaves the completed recording
-alone. Inline cancellation returns normally from the optional notes stage so the
-pipeline finishes `PROCESSED`/`Completed` once the current request returns. No
-worker termination or HTTP-session closure is used. Upgrades retire legacy
-tokenless claims and require a coordinated worker restart.
+Before each model request of a notes run, parts, repairs, Nojoin's own retries and the secondary provider included, the run checks that it still owns its claim (`check_notes_run` in [backend/utils/notes_cancellation.py](../backend/utils/notes_cancellation.py)). A provider SDK's own retries belong to the request under way. A run that has lost its claim stops with `NotesRunCancelled`, which is neither a provider failure nor a reason to try the secondary provider. The request under way may finish, but its answer cannot publish. Cancelling deferred notes leaves the finished recording alone. Cancelling inline notes returns from the optional notes stage, so the pipeline finishes the recording `PROCESSED` once the current request returns. No worker is terminated and no HTTP session is closed. The migration that adds the run id retires claims left without one, so the workers restart with the API.
 
 ### Dispatching From The API
 
