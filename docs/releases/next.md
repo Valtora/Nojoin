@@ -114,7 +114,7 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 - One Alembic revision runs. `ed5d42732014` adds the nullable `users.legal_accepted_at`, with no backfill, so every account except the setup account is asked to accept the terms of use at its next visit (#1007).
 - One environment variable is new: `NOJOIN_WORKER_IDLE_RECYCLE_MINUTES`, empty for 15 minutes and `0` for off, which `docker-compose.example.yml` passes to `worker-gpu`. An existing `docker-compose.yml` does not pass it, so the default applies until you add it to `worker-gpu`'s `environment:` block. No config key changed, and `nginx/` needs no action (#1054).
 - Backups stay in format 3 and carry each user's acceptance time. An archive made before 3.2.0 restores its users with none, so they are asked at their next visit (#1007).
-- Two more Alembic revisions run after `ed5d42732014`. `04b28b70a1fb` adds the `user_identities` table, which links an account to its single sign-on identity and holds its groups. `3885627f5053` adds `recording_shares`. Neither changes an existing table. Eleven environment variables are new, all optional: `NOJOIN_OIDC_ISSUER`, `NOJOIN_OIDC_CLIENT_ID`, `NOJOIN_OIDC_CLIENT_SECRET`, `NOJOIN_OIDC_DISPLAY_NAME`, `NOJOIN_OIDC_SCOPES`, `NOJOIN_OIDC_USERNAME_CLAIM`, `NOJOIN_OIDC_GROUPS_CLAIM`, `NOJOIN_OIDC_ALLOWED_GROUPS`, `NOJOIN_OIDC_ADMIN_GROUPS`, `NOJOIN_OIDC_AUTO_CREATE` and `NOJOIN_PASSWORD_LOGIN`. Backups carry both tables (#1088).
+- Three more Alembic revisions run after `ed5d42732014`. `04b28b70a1fb` adds the `user_identities` table, which links an account to its single sign-on identity and holds its groups. `3885627f5053` adds `recording_shares`. `7c1d2e9a4b60` adds `recording_restore_requests`, which ties an ask to bring back a shared meeting to the owner's task for it. None changes an existing table. Eleven environment variables are new, all optional: `NOJOIN_OIDC_ISSUER`, `NOJOIN_OIDC_CLIENT_ID`, `NOJOIN_OIDC_CLIENT_SECRET`, `NOJOIN_OIDC_DISPLAY_NAME`, `NOJOIN_OIDC_SCOPES`, `NOJOIN_OIDC_USERNAME_CLAIM`, `NOJOIN_OIDC_GROUPS_CLAIM`, `NOJOIN_OIDC_ALLOWED_GROUPS`, `NOJOIN_OIDC_ADMIN_GROUPS`, `NOJOIN_OIDC_AUTO_CREATE` and `NOJOIN_PASSWORD_LOGIN`. Backups carry all three tables (#1088).
 
 ## Rollback
 
@@ -123,7 +123,7 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 - Roll the schema back before the images, because the 3.1.0 API refuses to start against a revision it does not know. With no browser recording in progress and 3.2.0 still running, run `docker compose exec api alembic downgrade bb518dd1f469`, then stop the stack and start the 3.1.0 image tags.
 - The downgrade drops `users.legal_accepted_at` and every recorded acceptance, so upgrading again asks every account except the setup account once more.
 - 3.1.0 restores an archive made on 3.2.0, without the acceptance times.
-- The downgrade also drops `recording_shares` and `user_identities`: every share goes, and accounts created through single sign-on are left without a way to sign in until an administrator gives them a password (#1088).
+- The downgrade also drops `recording_restore_requests`, `recording_shares` and `user_identities`: every share goes, the asks to bring a meeting back become ordinary tasks, and accounts created through single sign-on are left without a way to sign in until an administrator gives them a password (#1088).
 
 ## Known issues
 

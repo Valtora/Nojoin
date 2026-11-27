@@ -129,7 +129,7 @@ export default function RecordingHeader({
       addNotification({
         type: "success",
         message: already_asked
-          ? `You already asked ${ownerLabel(recording)}. It is still in their tasks.`
+          ? `${ownerLabel(recording)} has already been asked. It is in their tasks.`
           : `Asked ${ownerLabel(recording)}. It is in their tasks now.`,
       });
     } catch (error: unknown) {

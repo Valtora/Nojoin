@@ -31,6 +31,9 @@ from backend.models.document_page import DocumentPage  # noqa: F401
 from backend.models.notes_template import NotesTemplate  # noqa: F401
 from backend.models.people_tag import PeopleTag, PeopleTagLink  # noqa: F401
 from backend.models.recording import Recording  # noqa: F401
+from backend.models.recording_restore_request import (  # noqa: F401
+    RecordingRestoreRequest,
+)
 from backend.models.recording_share import RecordingShare  # noqa: F401
 from backend.models.speaker import (  # noqa: F401
     GlobalSpeaker,
@@ -66,6 +69,7 @@ MODELS: List[Tuple[str, Type[SQLModel]]] = [
     ("recordings", Recording),
     ("recording_shares", RecordingShare),
     ("user_task_recordings", UserTaskRecording),
+    ("recording_restore_requests", RecordingRestoreRequest),
     ("recording_speakers", RecordingSpeaker),
     ("recording_speaker_drift_refusals", RecordingSpeakerDriftRefusal),
     ("recording_tags", RecordingTag),

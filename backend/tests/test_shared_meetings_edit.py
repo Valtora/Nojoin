@@ -389,3 +389,57 @@ async def test_a_put_away_meeting_is_read_only_and_the_owner_can_be_asked(
     assert [task["title"] for task in tasks.json()] == [
         f'editor asks you to {verb} "{recording.name}"'
     ]
+
+
+async def _owner_tasks(harness, owner, recording) -> list[dict]:
+    async with harness.client(owner) as client:
+        response = await client.get(
+            "/api/v1/tasks/",
+            params={"recording_id": recording.public_id, "status": "all"},
+        )
+    return response.json()
+
+
+@pytest.mark.anyio
+async def test_one_ask_per_meeting_and_kind_completed_when_it_comes_back(
+    harness, meeting
+) -> None:
+    owner, editor, viewer, recording, _ = meeting
+    ask_url = f"/api/v1/recordings/{recording.public_id}/shares/me/restore-request"
+    async with harness.client(owner) as client:
+        await client.post(f"/api/v1/recordings/{recording.public_id}/archive")
+    async with harness.client(editor) as client:
+        first = await client.post(ask_url)
+    # Renaming the meeting changes the task title it would get, not the ask.
+    async with harness.session_maker() as session:
+        stored = await session.get(Recording, recording.id)
+        stored.name = "Renamed sync"
+        await session.commit()
+    async with harness.client(viewer) as client:
+        renamed = await client.post(ask_url)
+    assert first.json()["already_asked"] is False
+    assert renamed.json() == {"task_id": first.json()["task_id"], "already_asked": True}
+
+    # Binned now too: bringing it out of the bin is another kind of ask.
+    async with harness.client(owner) as client:
+        await client.post(f"/api/v1/recordings/{recording.public_id}/soft-delete")
+    async with harness.client(viewer) as client:
+        restore = await client.post(ask_url)
+    assert restore.json()["already_asked"] is False
+    assert restore.json()["task_id"] != first.json()["task_id"]
+
+    async with harness.client(owner) as client:
+        restored = await client.post(
+            f"/api/v1/recordings/{recording.public_id}/restore"
+        )
+    assert restored.status_code == 200, restored.text
+    tasks = await _owner_tasks(harness, owner, recording)
+    assert len(tasks) == 2
+    assert all(task["completed_at"] is not None for task in tasks)
+
+    # Put away again later, the meeting can be asked for again.
+    async with harness.client(owner) as client:
+        await client.post(f"/api/v1/recordings/{recording.public_id}/archive")
+    async with harness.client(editor) as client:
+        again = await client.post(ask_url)
+    assert again.json()["already_asked"] is False

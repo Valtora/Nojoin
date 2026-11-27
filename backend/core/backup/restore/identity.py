@@ -385,8 +385,28 @@ def _resolve_recording_shares_identity(ctx: "_RowContext") -> "RowOutcome":
     return RowOutcome.INSERT
 
 
+def _resolve_recording_restore_requests_identity(
+    ctx: "_RowContext",
+) -> "RowOutcome":
+    """Keep the ask already on this meeting for its kind; at most one exists."""
+    RecordingRestoreRequest = runtime.RecordingRestoreRequest
+    existing = ctx.session.exec(
+        select(RecordingRestoreRequest)
+        .where(
+            RecordingRestoreRequest.recording_id == ctx.item_data.get("recording_id")
+        )
+        .where(RecordingRestoreRequest.kind == ctx.item_data.get("kind"))
+    ).first()
+    if existing is not None:
+        if ctx.old_id is not None:
+            ctx.state.id_map["recording_restore_requests"][ctx.old_id] = existing.id
+        return RowOutcome.HANDLED
+    return RowOutcome.INSERT
+
+
 #: Tables whose incoming rows must be reconciled with existing records first.
 IDENTITY_RESOLVERS = {
+    "recording_restore_requests": _resolve_recording_restore_requests_identity,
     "user_identities": _resolve_user_identities_identity,
     "recording_shares": _resolve_recording_shares_identity,
     "users": _resolve_users_identity,

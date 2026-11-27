@@ -59,7 +59,8 @@ export const leaveShare = async (recordingId: RecordingId): Promise<void> => {
 
 /**
  * Asks the owner to bring back a shared meeting they archived or binned. It
- * lands in their Tasks; asking again while that task is open adds nothing.
+ * lands in their Tasks, one per meeting and kind of ask, whoever asks; restoring
+ * the meeting completes it.
  */
 export const requestRestore = async (
   recordingId: RecordingId,

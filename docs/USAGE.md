@@ -269,7 +269,7 @@ A line whose text was changed by hand in the web app is marked `Edited`. `AI cor
 
 A meeting shared with you shows a people icon in the recordings list and **Shared by** with the owner's name in its header. **Leave** in the header, or **Leave Shared Meeting** in the list's **⋯** menu, removes it from your list. A meeting shared with a group you are in has neither: only its owner can remove it.
 
-When the owner archives a shared meeting or moves it to the bin, the people it is shared with can still open it but only read it. Its header says so, with **Ask to unarchive it** or **Ask to restore it**, which adds a task to the owner's **Tasks** linked to the meeting. Asking again while that task is open adds nothing.
+When the owner archives a shared meeting or moves it to the bin, the people it is shared with can still open it but only read it. Its header says so, with **Ask to unarchive it** or **Ask to restore it**, which adds a task to the owner's **Tasks** linked to the meeting. There is one such task per meeting for unarchiving and one for restoring, however many people ask and whatever the meeting is called, and bringing the meeting back completes it.
 
 Your own tasks can link to any meeting you can open, shared ones included.
 

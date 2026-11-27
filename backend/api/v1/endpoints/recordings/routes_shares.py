@@ -19,7 +19,6 @@ from sqlmodel import col, select
 from backend.api.deps import get_current_user, get_db
 from backend.api.params import RowId
 from backend.models.recording_share import RecordingShare, ShareLevel
-from backend.models.task import UserTask, UserTaskRecording
 from backend.models.user import User
 from backend.services.recording_access import (
     Access,
@@ -27,6 +26,7 @@ from backend.services.recording_access import (
     require_recording,
     resolve_grant,
 )
+from backend.services.restore_requests import ask_to_bring_back
 from backend.services.user_identities import display_names, groups_of
 
 from .router import router
@@ -195,9 +195,6 @@ class RestoreRequestRead(BaseModel):
     already_asked: bool
 
 
-TASK_TITLE_MAX_LENGTH = 255
-
-
 # Declared before /shares/{share_id} for the same reason as /shares/me.
 @router.post(
     "/{recording_id}/shares/me/restore-request", response_model=RestoreRequestRead
@@ -211,8 +208,9 @@ async def request_recording_restore(
     """Ask the owner to bring back a shared meeting they archived or binned.
 
     While it is put away, the people it is shared with can only read it. The
-    ask lands in the owner's Tasks, linked to the meeting, and asking again
-    while that task is open adds nothing.
+    ask lands in the owner's Tasks, linked to the meeting. There is one open ask
+    per meeting and kind (unarchive or restore), whoever asks and whatever the
+    meeting is called, and restoring the meeting completes it.
     """
     grant = await resolve_grant(grant, db, recording_id, current_user)
     if grant.is_owner:
@@ -220,46 +218,8 @@ async def request_recording_restore(
     recording = grant.recording
     if not (recording.is_archived or recording.is_deleted):
         raise HTTPException(status_code=409, detail="recording_not_shelved")
-
-    names = await display_names(db, [current_user.id])
-    asker = names.get(current_user.id) or current_user.username
-    verb = "restore" if recording.is_deleted else "unarchive"
-    title = f'{asker} asks you to {verb} "{recording.name}"'
-    if len(title) > TASK_TITLE_MAX_LENGTH:
-        title = title[: TASK_TITLE_MAX_LENGTH - 2] + '…"'
-
-    existing = (
-        await db.execute(
-            select(UserTask).where(
-                UserTask.user_id == recording.user_id,
-                UserTask.title == title,
-                col(UserTask.completed_at).is_(None),
-                col(UserTask.archived_at).is_(None),
-                UserTask.recording_links.any(
-                    UserTaskRecording.recording_id == recording.id
-                ),
-            )
-        )
-    ).scalar_one_or_none()
-    if existing is not None:
-        assert existing.id is not None
-        return RestoreRequestRead(task_id=existing.id, already_asked=True)
-
-    place = "the bin" if recording.is_deleted else "the archive"
-    task = UserTask(
-        user_id=recording.user_id,
-        title=title,
-        body=(
-            f"You shared this meeting with {asker}. While it is in {place} they "
-            "can only read it."
-        ),
-    )
-    db.add(task)
-    await db.flush()
-    assert task.id is not None
-    db.add(UserTaskRecording(task_id=task.id, recording_id=recording.id))
-    await db.commit()
-    return RestoreRequestRead(task_id=task.id, already_asked=False)
+    ask = await ask_to_bring_back(db, recording, current_user)
+    return RestoreRequestRead(task_id=ask.task_id, already_asked=ask.already_asked)
 
 
 @router.delete(

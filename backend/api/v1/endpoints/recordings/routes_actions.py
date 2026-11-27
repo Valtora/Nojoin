@@ -29,6 +29,7 @@ from backend.services.recording_access import (
     require_recording,
     resolve_grant,
 )
+from backend.services.restore_requests import settle_asks
 from backend.utils.canonical_pipeline.constants import _load_transcript
 from backend.utils.document_storage import (
     delete_document_files,
@@ -338,6 +339,8 @@ async def restore_recording(
     recording.is_deleted = False
 
     db.add(recording)
+    # Anyone it is shared with who asked for it back has their ask answered.
+    await settle_asks(db, [recording.id])
     await db.commit()
     await db.refresh(recording)
 

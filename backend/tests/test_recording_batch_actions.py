@@ -33,6 +33,7 @@ from backend.models.recording import Recording, RecordingStatus
 from backend.models.user import User, UserRole
 from backend.tests.postgres_setup import fresh_schema
 from backend.tests.sqlite_schemas import (
+    RECORDING_RESTORE_REQUESTS_SCHEMA,
     RECORDING_TAGS_SCHEMA,
     RECORDINGS_SCHEMA,
     TAGS_SCHEMA,
@@ -65,7 +66,12 @@ async def session_maker() -> AsyncIterator[async_sessionmaker]:
         poolclass=StaticPool,
     )
     async with engine.begin() as connection:
-        for schema in (RECORDINGS_SCHEMA, TAGS_SCHEMA, RECORDING_TAGS_SCHEMA):
+        for schema in (
+            RECORDINGS_SCHEMA,
+            TAGS_SCHEMA,
+            RECORDING_TAGS_SCHEMA,
+            RECORDING_RESTORE_REQUESTS_SCHEMA,
+        ):
             await connection.execute(text(schema))
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with maker() as session:

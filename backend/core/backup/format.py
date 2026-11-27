@@ -132,6 +132,11 @@ RESTORE_FOREIGN_KEYS: Dict[str, Tuple[_ForeignKeySpec, ...]] = {
         _own("task_id", "user_tasks"),
         _own("recording_id", "recordings"),
     ),
+    "recording_restore_requests": (
+        _own("recording_id", "recordings"),
+        _own("task_id", "user_tasks"),
+        _enrich("requested_by_id", "users"),
+    ),
     "recording_speakers": (
         _own("recording_id", "recordings"),
         _enrich("global_speaker_id", "global_speakers"),
