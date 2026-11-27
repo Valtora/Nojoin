@@ -117,7 +117,7 @@ describe("notes lifecycle mutations through the recording page", () => {
       await counter.take();
       fireEvent.click(notes.getByRole("button", { name: "Cancel" }));
       await flush();
-      expect(notes.getByRole("button", { name: "Cancelling..." })).toBeDisabled();
+      expect(notes.getByRole("button", { name: "Cancelling..." })).toHaveAttribute("aria-disabled", "true");
       const pending = await counter.take();
       expect(pending("components/NotesGenerationControl.tsx", "NotesGenerationControl")).toBeGreaterThan(0);
       expect(pending("components/RichTextEditor.tsx", "RichTextEditor")).toBe(0);
