@@ -25,7 +25,12 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.encryption import decrypt_secret, encrypt_secret
-from backend.models.calendar import CalendarConnection, CalendarProvider
+from backend.core.task_dispatch import dispatch_task_best_effort
+from backend.models.calendar import (
+    CalendarConnection,
+    CalendarProvider,
+    CalendarSyncStatus,
+)
 from backend.models.user import User
 
 from .models_dto import ProviderIdentity, TokenBundle
@@ -274,13 +279,37 @@ async def _finish(  # noqa: PLR0913 - one keyword per form field
             {"settings": result.get("settings"), "calendars": result.get("calendars")}
         ),
     )
-    from .sync import sync_connection_in_session
-
-    await sync_connection_in_session(db, connection.id or 0)
-    await db.refresh(connection)
+    await _start_first_sync(db, connection)
     return ConnectStep(
         "done", connection=connection, warnings=list(result.get("warnings") or [])
     )
+
+
+async def _start_first_sync(db: AsyncSession, connection: CalendarConnection) -> None:
+    """Queue the first sync on worker-io and answer at once.
+
+    A first Proton sync reads 25 months in 93-day windows and can take a
+    minute or two, so the sign-in answers as soon as the connection is saved
+    and the dialog shows the sync's progress. Closing the dialog never stops
+    it. If the queue cannot be reached, the account waits for the next
+    scheduled sync instead.
+    """
+    connection.sync_status = CalendarSyncStatus.SYNCING.value
+    connection.sync_error = None
+    connection.sync_progress_done = 0
+    connection.sync_progress_total = None
+    db.add(connection)
+    await db.commit()
+    queued = await dispatch_task_best_effort(
+        "backend.worker.tasks.sync_calendar_connection_task",
+        args=[connection.id],
+        context=f"first sync of connection {connection.id}",
+    )
+    if queued is None:
+        connection.sync_status = CalendarSyncStatus.IDLE.value
+        connection.sync_progress_done = None
+        db.add(connection)
+        await db.commit()
 
 
 async def end_session(db: AsyncSession, connection: CalendarConnection) -> None:

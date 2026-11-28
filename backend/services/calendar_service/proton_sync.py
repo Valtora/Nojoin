@@ -38,10 +38,35 @@ from .proton_mapping import chunks, records, window
 from .proton_session import LOCK_WAIT_SECONDS, run_op
 from .text_utils import _build_sync_window, _utc_now
 from .tool_errors import CalendarToolError
-from .write_audit import advisory_lock, connection_lock_key
+from .write_audit import advisory_lock, connection_lock_key, sync_lock_key
 
 logger = logging.getLogger(__name__)
 _MAX_CHANGE_PAGES = 20
+# Another sync of the same account is under way when the lock is held.
+_SYNC_LOCK_WAIT_SECONDS = 0.1
+
+
+class _Progress:
+    """Steps done out of steps in all, stored on the connection as they go,
+    so the connect dialog and the Calendars card can show them."""
+
+    def __init__(self, db: AsyncSession, connection: CalendarConnection) -> None:
+        self.db = db
+        self.connection = connection
+        self.done = 0
+        self.total = 0
+
+    async def save(self) -> None:
+        self.connection.sync_progress_done = self.done
+        self.connection.sync_progress_total = max(self.total, self.done)
+        self.db.add(self.connection)
+        await self.db.commit()
+
+    async def step(self) -> None:
+        self.done += 1
+        await self.save()
+
+
 _SLOW_DOWN = "Proton asked Nojoin to slow down. The next sync will try again."
 
 
@@ -126,6 +151,7 @@ async def _full_fetch(  # noqa: PLR0913 - the calendar being synced and its cont
     span: tuple[datetime, datetime],
     range_zone: str,
     started_at: datetime,
+    progress: "_Progress",
 ) -> str | None:
     found: dict[str, ProviderEventRecord] = {}
     cursor = None
@@ -145,6 +171,7 @@ async def _full_fetch(  # noqa: PLR0913 - the calendar being synced and its cont
             cursor = result.get("cursor")
         for record in records(result.get("events")):
             found[record.remote_id] = record
+        await progress.step()
     await _reconcile_calendar_events(
         db,
         calendar.id or 0,
@@ -248,22 +275,33 @@ async def _apply_changes(
     return cursor
 
 
-async def _sync_calendar(
+def _steps(calendar: CalendarSource, span: tuple[datetime, datetime]) -> int:
+    """A change-feed read is one step; a full fetch one per window."""
+    return 1 if _can_use_incremental_sync(calendar, *span) else len(chunks(*span))
+
+
+async def _sync_calendar(  # noqa: PLR0913 - the calendar being synced and its context
     db: AsyncSession,
     connection: CalendarConnection,
     calendar: CalendarSource,
     range_zone: str,
     started_at: datetime,
+    progress: _Progress,
 ) -> None:
     span = _build_sync_window()
     cursor = None
     if _can_use_incremental_sync(calendar, *span):
         cursor = await _apply_changes(db, connection, calendar, span, range_zone)
+        await progress.step()
+        if cursor is None:
+            # The feed asked for a full fetch after all.
+            progress.total += len(chunks(*span))
     if cursor is None:
         cursor = await _full_fetch(
-            db, connection, calendar, span, range_zone, started_at
+            db, connection, calendar, span, range_zone, started_at, progress
         )
     calendar.sync_cursor = cursor
+    # Only now has this calendar's own fetch completed.
     calendar.last_synced_at = _utc_now()
     calendar.sync_window_start, calendar.sync_window_end = span
     db.add(calendar)
@@ -286,11 +324,24 @@ def _failure(error: Exception) -> tuple[str, str]:
 async def sync_proton_connection(
     db: AsyncSession, connection: CalendarConnection
 ) -> None:
-    """Sync every selected calendar of one Proton connection.
+    """Sync every selected calendar of one Proton connection, unless another
+    sync of it is already under way (the first one after sign-in, say).
 
     A calendar's ``last_synced_at`` moves only when its own fetch succeeded;
     the connection's only when every selected calendar's did.
     """
+    try:
+        async with advisory_lock(
+            sync_lock_key(connection.id or 0), wait=_SYNC_LOCK_WAIT_SECONDS
+        ):
+            await _sync_connection(db, connection)
+    except CalendarToolError as error:
+        if error.code != "busy":
+            raise
+        logger.info("Proton connection %s is already syncing", connection.id)
+
+
+async def _sync_connection(db: AsyncSession, connection: CalendarConnection) -> None:
     owner = await db.get(User, connection.user_id)
     user_zone = get_user_timezone_name(owner.settings if owner else None)
     started_at = _utc_now()
@@ -299,6 +350,7 @@ async def sync_proton_connection(
     connection.last_sync_started_at = started_at
     db.add(connection)
     await db.commit()
+    progress = _Progress(db, connection)
     try:
         listing = await _call(
             db, connection, "list_calendars", {}, READ_TIMEOUT_SECONDS
@@ -306,9 +358,15 @@ async def sync_proton_connection(
         calendars = await _refresh_connection_calendars(
             db, connection, calendar_records(listing)
         )
-        for calendar in [item for item in calendars if item.is_selected]:
+        selected = [item for item in calendars if item.is_selected]
+        span = _build_sync_window()
+        progress.total = sum(_steps(calendar, span) for calendar in selected)
+        await progress.save()
+        for calendar in selected:
             range_zone = normalise_timezone_name(calendar.time_zone) or user_zone
-            await _sync_calendar(db, connection, calendar, range_zone, started_at)
+            await _sync_calendar(
+                db, connection, calendar, range_zone, started_at, progress
+            )
     except (HelperError, CalendarToolError) as error:
         logger.warning(
             "Proton sync failed for connection %s: %s",
@@ -320,6 +378,7 @@ async def sync_proton_connection(
         await db.refresh(connection)
         connection.sync_status = status
         connection.sync_error = message
+        connection.sync_progress_done = connection.sync_progress_total = None
         connection.last_sync_completed_at = _utc_now()
         db.add(connection)
         await db.commit()
@@ -327,6 +386,7 @@ async def sync_proton_connection(
     completed = _utc_now()
     connection.sync_status = CalendarSyncStatus.SUCCESS.value
     connection.sync_error = None
+    connection.sync_progress_done = connection.sync_progress_total = None
     connection.last_sync_completed_at = completed
     connection.last_synced_at = completed
     db.add(connection)

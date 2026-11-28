@@ -7,9 +7,10 @@ vi.mock("@/lib/api", () => ({
   connectProton: vi.fn(),
   connectProtonTwoFactor: vi.fn(),
   connectProtonUnlock: vi.fn(),
+  getCalendarOverview: vi.fn(),
 }));
 
-import { connectProton, connectProtonTwoFactor } from "@/lib/api";
+import { connectProton, connectProtonTwoFactor, getCalendarOverview } from "@/lib/api";
 import ProtonConnectModal from "./ProtonConnectModal";
 
 const connection = {
@@ -122,5 +123,76 @@ describe("ProtonConnectModal", () => {
     expect((await screen.findByRole("alert")).textContent).toContain(
       "Proton did not accept that username or password.",
     );
+  });
+});
+
+describe("ProtonConnectModal after sign-in", () => {
+  const syncing = {
+    ...connection,
+    sync_status: "syncing",
+    sync_progress_done: 3,
+    sync_progress_total: 9,
+  } as unknown as CalendarConnection;
+
+  async function connect(onConnected = vi.fn(), onClose = vi.fn(), onUpdated = vi.fn()) {
+    vi.mocked(connectProton).mockResolvedValue({ step: "done", connection: syncing, warnings: [] });
+    render(
+      <ProtonConnectModal
+        open
+        onClose={onClose}
+        onConnected={onConnected}
+        onUpdated={onUpdated}
+      />,
+    );
+    passDisclosure();
+    signIn();
+    await screen.findByText("Connected");
+    return { onConnected, onClose, onUpdated };
+  }
+
+  it("says it is connected and shows the first sync's progress", async () => {
+    const { onConnected } = await connect();
+
+    expect(screen.getByText("alice@example.com")).toBeTruthy();
+    const bar = screen.getByRole("progressbar", { name: "Calendar sync progress" });
+    expect(bar.getAttribute("aria-valuenow")).toBe("33");
+    expect(screen.getByText("Syncing events: 3 of 9 steps")).toBeTruthy();
+    expect(onConnected).toHaveBeenCalledWith(syncing);
+  });
+
+  it("lets the sync go on in the background", async () => {
+    const { onClose } = await connect();
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue in background" }));
+
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("follows the sync to the end, or to its failure", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.mocked(getCalendarOverview).mockResolvedValueOnce({
+        providers: [],
+        connections: [
+          {
+            ...syncing,
+            sync_status: "error",
+            sync_error: "Proton asked Nojoin to slow down. The next sync will try again.",
+            sync_progress_done: null,
+            sync_progress_total: null,
+          } as unknown as CalendarConnection,
+        ],
+      });
+      const { onUpdated } = await connect();
+
+      await vi.advanceTimersByTimeAsync(2100);
+
+      expect((await screen.findByRole("alert")).textContent).toContain("Needs attention");
+      expect(screen.getByText(/slow down/)).toBeTruthy();
+      expect(onUpdated).toHaveBeenCalled();
+      expect(screen.getByRole("button", { name: "Done" })).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

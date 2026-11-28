@@ -1105,6 +1105,9 @@ export interface CalendarConnection {
   last_sync_completed_at?: string | null;
   last_synced_at?: string | null;
   selected_calendar_count: number;
+  /** How far a sync under way has got; null when none is reporting progress. */
+  sync_progress_done?: number | null;
+  sync_progress_total?: number | null;
   push_active: boolean;
   calendars: CalendarSource[];
 }

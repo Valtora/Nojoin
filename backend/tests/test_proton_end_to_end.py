@@ -105,8 +105,17 @@ def session_maker(engine: AsyncEngine, monkeypatch) -> sessionmaker:
     async def pop(state):
         return store.pop(state, None)
 
+    async def run_first_sync(name, *, args=None, **kwargs):
+        # What worker-io does with the queued task, run here in its place.
+        from backend.services.calendar_service.sync import sync_connection_in_session
+
+        async with maker() as session:
+            await sync_connection_in_session(session, args[0])
+        return object()
+
     monkeypatch.setattr(proton_connect, "_save_oauth_state", save)
     monkeypatch.setattr(proton_connect, "_pop_oauth_state", pop)
+    monkeypatch.setattr(proton_connect, "dispatch_task_best_effort", run_first_sync)
     return maker
 
 
@@ -121,7 +130,13 @@ async def test_connect_sync_write_answer_and_cancel(session_maker, fake_proton) 
             password=fake_proton["password"],
         )
     assert step.step == "done"
-    assert step.connection is not None and step.connection.sync_status == "success"
+    assert step.connection is not None
+    async with session_maker() as session:
+        from backend.models.calendar import CalendarConnection
+
+        synced = await session.get(CalendarConnection, step.connection.id)
+    assert synced.sync_status == "success"
+    assert (synced.sync_progress_done, synced.sync_progress_total) == (None, None)
     bind_identity(alice)
 
     (calendar,) = [c for c in await list_calendars() if c["provider"] == "proton"]

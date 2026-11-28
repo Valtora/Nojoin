@@ -138,6 +138,15 @@ class CalendarConnection(BaseDBModel, table=True):
     provider_secrets_encrypted: Optional[str] = Field(
         default=None, sa_column=Column(Text, nullable=True)
     )
+    # How far a sync under way has got: steps done out of steps in all (a
+    # calendar's 93-day windows, or its one change-feed read). Null when no
+    # sync is reporting progress.
+    sync_progress_done: Optional[int] = Field(
+        default=None, sa_column=Column(sa.Integer, nullable=True)
+    )
+    sync_progress_total: Optional[int] = Field(
+        default=None, sa_column=Column(sa.Integer, nullable=True)
+    )
 
     calendars: List["CalendarSource"] = Relationship(
         back_populates="connection",
@@ -532,6 +541,8 @@ class CalendarConnectionRead(SQLModel):
     last_sync_completed_at: Optional[datetime] = None
     last_synced_at: Optional[datetime] = None
     selected_calendar_count: int
+    sync_progress_done: Optional[int] = None
+    sync_progress_total: Optional[int] = None
     # True when at least one selected calendar has a live, unexpired push
     # channel, i.e. changes arrive by webhook rather than only the 15-min poll.
     push_active: bool = False

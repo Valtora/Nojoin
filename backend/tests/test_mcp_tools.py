@@ -418,7 +418,9 @@ SCHEMA_STATEMENTS = [
         last_sync_started_at DATETIME,
         last_sync_completed_at DATETIME,
         last_synced_at DATETIME,
-        provider_secrets_encrypted TEXT
+        provider_secrets_encrypted TEXT,
+        sync_progress_done INTEGER,
+        sync_progress_total INTEGER
     )
     """,
     """

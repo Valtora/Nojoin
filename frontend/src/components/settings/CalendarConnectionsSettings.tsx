@@ -36,7 +36,8 @@ import {
   CALENDAR_CONNECT_LABELS as CONNECT_LABELS,
   describeCalendarConnectFailure,
 } from "./calendarConnectResult";
-import ProtonConnectModal from "./ProtonConnectModal";
+import CalendarSyncProgress from "./CalendarSyncProgress";
+import ProtonConnectModal, { SYNC_POLL_MS } from "./ProtonConnectModal";
 import SettingsBlock from "./SettingsBlock";
 import SettingsCallout from "./SettingsCallout";
 import SettingsCard from "./SettingsCard";
@@ -212,6 +213,26 @@ export default function CalendarConnectionsSettings() {
     addNotification({ type: "success", message: "Proton Calendar connected successfully" });
   };
 
+  const handleConnectionUpdated = useCallback((connection: CalendarConnection) => {
+    setOverview((currentOverview) => upsertConnection(currentOverview, connection));
+  }, []);
+
+  // A sync under way (a Proton account's first, run in the background)
+  // reports its progress on the connection: read it until it finishes.
+  const anySyncing =
+    overview?.connections.some((connection) => connection.sync_status === "syncing") ?? false;
+  useEffect(() => {
+    if (!anySyncing) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      getCalendarOverview()
+        .then(setOverview)
+        .catch(() => undefined);
+    }, SYNC_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [anySyncing]);
+
   const handleConnect = async (provider: CalendarProvider) => {
     setConnectFailure(null);
     if (provider === "proton") {
@@ -363,6 +384,7 @@ export default function CalendarConnectionsSettings() {
         reconnectAddress={protonModal.address}
         onClose={() => setProtonModal({ open: false, address: null })}
         onConnected={handleProtonConnected}
+        onUpdated={handleConnectionUpdated}
       />
       {connectFailure && (
         <SettingsBlock>
@@ -543,6 +565,11 @@ export default function CalendarConnectionsSettings() {
                       </div>
                     }
                   >
+                    {connection.provider === "proton" && connection.sync_status === "syncing" && (
+                      <div className="mb-3">
+                        <CalendarSyncProgress connection={connection} />
+                      </div>
+                    )}
                     {connection.sync_error && (
                       <SettingsCallout tone="warning" className="mb-3">
                         <span className="flex items-start gap-2">

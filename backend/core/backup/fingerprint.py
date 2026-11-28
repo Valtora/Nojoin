@@ -57,6 +57,8 @@ FINGERPRINT_IGNORED_COLUMNS: Dict[str, frozenset[str]] = {
             "access_token_encrypted",
             "refresh_token_encrypted",
             "provider_secrets_encrypted",
+            "sync_progress_done",
+            "sync_progress_total",
             "token_expires_at",
             "sync_status",
             "sync_error",

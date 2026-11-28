@@ -298,9 +298,17 @@ def _unlocked() -> dict:
 
 
 @pytest.mark.anyio
-async def test_connect_with_two_factor_saves_the_session_and_syncs(
-    session_maker, helper, flows
+async def test_connect_with_two_factor_saves_the_session_and_queues_the_sync(
+    session_maker, helper, flows, monkeypatch
 ) -> None:
+    queued: list = []
+
+    async def dispatch(name, *, args=None, **kwargs):
+        assert name == "backend.worker.tasks.sync_calendar_connection_task"
+        queued.append(args)
+        return object()
+
+    monkeypatch.setattr(proton_connect, "dispatch_task_best_effort", dispatch)
     helper.ok(
         "login_start",
         {
@@ -350,8 +358,12 @@ async def test_connect_with_two_factor_saves_the_session_and_syncs(
         events = list((await session.execute(select(CalendarEvent))).scalars())
     assert sources["cal-proton"].is_selected and sources["cal-proton"].is_primary
     assert sources["cal-holidays"].is_read_only
-    assert sources["cal-proton"].sync_cursor == "cursor-1"
-    assert [event.provider_event_id for event in events] == ["planning@nojoin"]
+    # The first sync is queued on worker-io; the sign-in does not wait for it.
+    assert events == []
+    assert queued == [[connection.id]]
+    assert connection.sync_status == "syncing"
+    assert connection.sync_progress_done == 0
+    assert "list_events" not in helper.ops()
     # The password went to the helper and nowhere else Nojoin keeps.
     unlock_call = helper.calls()[2]["request"]
     assert unlock_call["args"]["password"] == "correct horse"
@@ -586,3 +598,71 @@ def test_connect_refusal_names_protons_code() -> None:
         outage.message
         == "Nojoin could not connect to Proton. Try again in a few minutes."
     )
+
+
+@pytest.mark.anyio
+async def test_sync_reports_its_progress_and_clears_it(
+    session_maker, helper, monkeypatch
+) -> None:
+    from backend.services.calendar_service import proton_sync
+
+    await _proton_connection(session_maker)
+    helper.ok("list_calendars", calendars_result())
+    helper.ok(
+        "list_events", {"events": [helper_event("planning@nojoin")], "cursor": "c1"}
+    )
+    seen: list[tuple[int, int]] = []
+    save = proton_sync._Progress.save
+
+    async def recording_save(self):
+        await save(self)
+        seen.append(
+            (self.connection.sync_progress_done, self.connection.sync_progress_total)
+        )
+
+    monkeypatch.setattr(proton_sync._Progress, "save", recording_save)
+
+    async with session_maker() as session:
+        await sync_connection_in_session(session, 7)
+        connection = await session.get(CalendarConnection, 7)
+
+    windows = helper.ops().count("list_events")
+    assert seen[0] == (0, windows)
+    assert seen[-1] == (windows, windows)
+    assert [done for done, _ in seen] == list(range(windows + 1))
+    assert (connection.sync_progress_done, connection.sync_progress_total) == (
+        None,
+        None,
+    )
+    assert connection.sync_status == "success"
+    assert connection.last_synced_at is not None
+
+
+@pytest.mark.anyio
+async def test_a_second_sync_of_the_same_account_stands_aside(
+    session_maker, helper
+) -> None:
+    from backend.services.calendar_service.write_audit import (
+        advisory_lock,
+        sync_lock_key,
+    )
+
+    await _proton_connection(session_maker)
+    helper.ok("list_calendars", calendars_result())
+    held, release = asyncio.Event(), asyncio.Event()
+
+    async def first_sync() -> None:
+        async with advisory_lock(sync_lock_key(7), wait=1):
+            held.set()
+            await release.wait()
+
+    holder = asyncio.create_task(first_sync())
+    await held.wait()
+    try:
+        async with session_maker() as session:
+            await sync_connection_in_session(session, 7)
+    finally:
+        release.set()
+        await holder
+
+    assert helper.ops() == []

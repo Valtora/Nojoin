@@ -454,6 +454,8 @@ def _serialise_connection(
         selected_calendar_count=sum(
             1 for calendar in calendars if calendar.is_selected
         ),
+        sync_progress_done=connection.sync_progress_done,
+        sync_progress_total=connection.sync_progress_total,
         push_active=push_active,
         calendars=[_serialise_source(calendar) for calendar in calendars],
     )

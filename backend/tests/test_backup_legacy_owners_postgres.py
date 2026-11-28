@@ -65,6 +65,8 @@ COLUMNS_ADDED_AFTER_BEFORE = {
     ("recordings", "title_user_edited"): "BOOLEAN NOT NULL DEFAULT false",
     ("users", "legal_accepted_at"): "TIMESTAMP",
     ("calendar_connections", "provider_secrets_encrypted"): "TEXT",
+    ("calendar_connections", "sync_progress_done"): "INTEGER",
+    ("calendar_connections", "sync_progress_total"): "INTEGER",
     ("calendar_events", "start_time_zone"): "VARCHAR(64)",
     ("calendar_events", "end_time_zone"): "VARCHAR(64)",
     ("calendar_events", "range_start"): "TIMESTAMP",

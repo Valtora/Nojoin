@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import { ExternalLink, ShieldAlert } from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
+import { CheckCircle2, ExternalLink, ShieldAlert } from "lucide-react";
 
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
@@ -10,6 +10,7 @@ import {
   connectProton,
   connectProtonTwoFactor,
   connectProtonUnlock,
+  getCalendarOverview,
 } from "@/lib/api";
 import { getErrorMessage } from "@/lib/errors";
 import type {
@@ -18,19 +19,26 @@ import type {
   ProtonConnectStep,
 } from "@/types";
 
+import CalendarSyncProgress from "./CalendarSyncProgress";
 import SettingsCallout from "./SettingsCallout";
+
+/** How often the dialog reads the first sync's progress. */
+export const SYNC_POLL_MS = 2000;
 
 type Stage =
   | "disclosure"
   | "sign_in"
   | "verification"
   | "two_factor"
-  | "mailbox_password";
+  | "mailbox_password"
+  | "connected";
 
 interface ProtonConnectModalProps {
   open: boolean;
   onClose: () => void;
   onConnected: (connection: CalendarConnection) => void;
+  /** Each fresh read of the connection while its first sync runs. */
+  onUpdated?: (connection: CalendarConnection) => void;
   /** The account being reconnected, filled into the address field. */
   reconnectAddress?: string | null;
 }
@@ -58,6 +66,7 @@ export default function ProtonConnectModal({
   open,
   onClose,
   onConnected,
+  onUpdated,
   reconnectAddress,
 }: ProtonConnectModalProps) {
   const [stage, setStage] = useState<Stage>("disclosure");
@@ -70,6 +79,29 @@ export default function ProtonConnectModal({
   const [verification, setVerification] = useState<ProtonConnectRefusal | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [connection, setConnection] = useState<CalendarConnection | null>(null);
+  const syncing = stage === "connected" && connection?.sync_status === "syncing";
+
+  // The first sync runs on the server; the dialog only watches it, so
+  // closing it never stops the sync.
+  useEffect(() => {
+    if (!syncing || !connection) {
+      return;
+    }
+    const id = connection.id;
+    const timer = window.setInterval(() => {
+      getCalendarOverview()
+        .then((overview) => {
+          const latest = overview.connections.find((item) => item.id === id);
+          if (latest) {
+            setConnection(latest);
+            onUpdated?.(latest);
+          }
+        })
+        .catch(() => undefined);
+    }, SYNC_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [syncing, connection, onUpdated]);
 
   const close = () => {
     setStage("disclosure");
@@ -80,14 +112,18 @@ export default function ProtonConnectModal({
     setFlowId(null);
     setVerification(null);
     setError(null);
+    setConnection(null);
     onClose();
   };
 
   const follow = (step: ProtonConnectStep) => {
     setError(null);
     if (step.step === "done" && step.connection) {
+      setPassword("");
+      setMailboxPassword("");
+      setConnection(step.connection);
+      setStage("connected");
       onConnected(step.connection);
-      close();
       return;
     }
     setFlowId(step.flow_id ?? null);
@@ -148,10 +184,16 @@ export default function ProtonConnectModal({
       description="An unofficial connection, through Proton's private API."
       footer={
         <>
-          <Button variant="ghost" onClick={close}>
-            Cancel
-          </Button>
-          {stage === "disclosure" ? (
+          {stage !== "connected" && (
+            <Button variant="ghost" onClick={close}>
+              Cancel
+            </Button>
+          )}
+          {stage === "connected" ? (
+            <Button variant="primary" onClick={close}>
+              {syncing ? "Continue in background" : "Done"}
+            </Button>
+          ) : stage === "disclosure" ? (
             <Button
               variant="primary"
               disabled={!understood}
@@ -173,7 +215,38 @@ export default function ProtonConnectModal({
         </>
       }
     >
-      {stage === "disclosure" ? (
+      {stage === "connected" && connection ? (
+        <div className="space-y-4 text-sm">
+          <SettingsCallout tone="success" title="Connected">
+            <span className="flex items-start gap-2">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              <span>{connection.email || connection.display_name || "Your Proton account"}</span>
+            </span>
+          </SettingsCallout>
+          {syncing ? (
+            <>
+              <CalendarSyncProgress connection={connection} />
+              <p className="text-xs contrast-helper">
+                The first sync carries on if you close this. The Calendars card shows its
+                progress.
+              </p>
+            </>
+          ) : connection.sync_status === "error" ||
+            connection.sync_status === "reauthorisation_required" ? (
+            <div role="alert">
+              <SettingsCallout tone="error" title="Needs attention">
+                {connection.sync_error || "The first sync did not finish."}
+              </SettingsCallout>
+            </div>
+          ) : (
+            <p className="text-contrast-muted">
+              {connection.sync_status === "success"
+                ? "The first sync has finished. Your events are on the dashboard."
+                : "Your calendars will sync with the next scheduled sync."}
+            </p>
+          )}
+        </div>
+      ) : stage === "disclosure" ? (
         <div className="space-y-3 text-sm text-contrast-muted">
           <SettingsCallout tone="warning" title="Before you connect">
             <ul className="list-disc space-y-1.5 pl-4">

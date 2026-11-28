@@ -46,6 +46,7 @@ _LOCK_POLL_SECONDS = 0.2
 # Namespaces keep the two kinds of advisory lock from ever sharing a key.
 _CONNECTION_LOCK = 0x4E4A01
 _IDEMPOTENCY_LOCK = 0x4E4A02
+_SYNC_LOCK = 0x4E4A03
 # Per event loop, since an asyncio lock cannot be shared across loops.
 _local_locks: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[int, asyncio.Lock]]" = weakref.WeakKeyDictionary()
 _held_locks: ContextVar[frozenset[int]] = ContextVar(
@@ -99,6 +100,15 @@ def _lock_key(namespace: int, value: str) -> int:
 
 def connection_lock_key(connection_id: int) -> int:
     return _lock_key(_CONNECTION_LOCK, str(connection_id))
+
+
+def sync_lock_key(connection_id: int) -> int:
+    """Held for a whole sync of one account, so two syncs never overlap.
+
+    Separate from the account lock each provider call takes, so a write is
+    never stuck behind a whole sync.
+    """
+    return _lock_key(_SYNC_LOCK, str(connection_id))
 
 
 def idempotency_lock_key(user_id: int, key: str) -> int:
