@@ -83,7 +83,7 @@ Protocol version: **1**.
 - When the refusal comes after a write landed (during the read-back), the write is reported as done
   with `verified` false and the warning `read_back_failed`; the caller must not retry it.
 - Proton's refresh tokens are single use. `refresh` sends the refresh token once and waits for the
-  answer even past `client.timeout_ms`, so give it a generous kill timeout. If the process is killed
+  answer even past `client.timeout_ms` (at most 90 s), so give it a kill timeout above that. If the process is killed
   mid-refresh, the old refresh token may already be spent: retry `refresh` once with it, and mark the
   connection for reconnection if that is refused.
 
@@ -116,7 +116,9 @@ an assistant: the caller handles it.
 | `provider_rejected` | no | `provider_rejected`, `provider_code`; `details.reason` `app_version_rejected` for Proton 5002, 5003 and 2064 |
 
 Proton's batch code 1001 means the batch was accepted; the per-entry code inside it is the verdict, and a
-pure delete answers 1001 with no entries, which is success.
+pure delete answers 1001 with no entries, which is success. When some entries of a batch landed and
+another was refused, the error carries `details.partial` true: read the event again before anything
+else.
 
 ## Shared shapes
 
@@ -266,8 +268,9 @@ Every operation that returns events returns occurrences, one record per row Nojo
 - `revision` is `p1:{ModifyTime}:{SEQUENCE}` of the row that was read: the exception row for an
   occurrence that has one, else the master. Pass it back as `expected_revision`.
 - `decrypt_warnings` lists cards that could not be read (`shared_encrypted`, `calendar_encrypted`,
-  `attendees`) or whose signature could not be checked (`signature_unverified`, for events signed by
-  someone else). A record is still returned with what could be read.
+  `attendees`), signatures that could not be checked (`signature_unverified`, for events signed by
+  someone else), and `recurrence_unreadable` for a rule the helper cannot expand, in which case only
+  the series' first occurrence is returned. A record is still returned with what could be read.
 - `provider_data` is for the caller to store and hand back unchanged; it is not part of the neutral
   model.
 
@@ -298,8 +301,9 @@ Every operation that returns events returns occurrences, one record per row Nojo
   `provider_event_id`s to delete.
 - `before` is the state of the target before the write (for the change log; for a cancel it is the
   whole event as it was).
-- `warnings` are short codes: `read_back_failed`, `attendee_keys_unavailable:<n>`,
-  `exceptions_removed:<n>`, `signature_unverified`.
+- `warnings` are short codes: `read_back_failed`, `attendee_keys_unavailable:<n>` (Proton attendees
+  whose keys could not be read, so they were not handed the event's key), `exceptions_removed:<n>` and
+  `personal_part_not_updated`.
 - `itip` is an opaque iCalendar `VEVENT` of what was written, for `send_itip`. Pass it back unchanged.
 
 ## Operations
@@ -370,7 +374,8 @@ again. Then it reads calendar settings and the calendars. Result:
 ```
 
 `calendars` has the shape `list_calendars` returns. `session.refresh_token` is echoed when the request
-carried it. A passphrase that opens no address key is `wrong_mailbox_password`.
+carried it. A passphrase that opens no address key is `wrong_mailbox_password`. `warnings` holds
+`address_keys_locked` when an enabled address's keys did not open (others did).
 
 ### `refresh`
 
@@ -483,6 +488,7 @@ Args:
   "scope": "single",
   "patch": {"title": "Design review", "hold": false},
   "share_with_attendees": false,
+  "share_with": [],
   "expected_revision": "p1:1795860302:0",
   "window": null
 }
@@ -510,8 +516,16 @@ Args:
 - `recurrence_rule` is refused on `occurrence`. Setting it on `single` turns the event into a series.
 - Refused with `not_organiser` for an event the user does not organise. A patch that changes nothing
   returns `written` false.
-- With `share_with_attendees` true, added Proton attendees get key packets and removed attendees go in
-  `RemovedAttendeeAddresses`; with it false, neither field is sent.
+- With `share_with_attendees` true, Proton attendees the patch adds get key packets, and so do the
+  attendees named in `share_with`: the caller lists there the ones its own records say were never
+  invited (every attendee of a hold being confirmed, for instance). Removed attendees go in
+  `RemovedAttendeeAddresses`. With it false, neither field is sent and `share_with` is ignored.
+- `series` content changes (title, description, location, `url`, `show_as`, hold) also reach each
+  exception row that still had the master's old value, so an occurrence edited on its own keeps its own
+  edit. Attendee additions and removals apply to every exception. When the master's `SEQUENCE` goes up
+  and exceptions stay, each exception is raised to at least the master's `SEQUENCE` in the same batch.
+- `hold` true on an event that has no private calendar part (some events made in Proton's own apps
+  carry no calendar key packet, and an update cannot add one) is `unsupported`.
 
 ### `cancel_event`
 
@@ -523,7 +537,10 @@ Args: `{"calendar_id": "...", "target": {...}, "scope": "single", "expected_revi
   the same batch. `series` deletes the master and every row with its `UID` in one batch.
 - Refused with `not_organiser` for someone else's invitation.
 - `before` holds the event's last state, `deleted_keys` the removed rows, and for `occurrence` `events`
-  holds the series as it now is.
+  holds the series as it now is. Other exception rows are raised to the master's new `SEQUENCE` in
+  the same batch.
+- `itip` is the event as it was (for `occurrence`, that occurrence with its `RECURRENCE-ID`), ready for a
+  `CANCEL`.
 
 ### `respond`
 
@@ -538,6 +555,8 @@ Args: `{"calendar_id": "...", "target": {"uid": "...", "recurrence_id": null},
   also re-sends the personal part (`PUT .../personal`) with the event's reminders and colour, as the web
   client does.
 - A response to one occurrence of a recurring invitation is `unsupported`; `recurrence_id` must be null.
+- The same answer as the current one returns `written` false and touches nothing. A failed personal-part
+  update after the answer landed is the warning `personal_part_not_updated`, not a failure.
 - `not_attendee` for the user's own event. The result adds `organiser_sees_answer`: true when the event
   is a Proton-to-Proton invitation, whose organiser sees the answer in their own calendar without mail.
 
