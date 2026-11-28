@@ -9,6 +9,7 @@ made up.
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 from collections.abc import AsyncIterator, Callable
@@ -729,8 +730,21 @@ async def test_a_held_account_lock_answers_busy(
     await _alice(session_maker)
     monkeypatch.setattr(write_steps, "LOCK_WAIT_SECONDS", 0.3)
 
-    async with advisory_lock(connection_lock_key(1), wait=1):
+    # Another task holds the lock: within one task it is re-entrant.
+    held, release = asyncio.Event(), asyncio.Event()
+
+    async def hold() -> None:
+        async with advisory_lock(connection_lock_key(1), wait=1):
+            held.set()
+            await release.wait()
+
+    holder = asyncio.create_task(hold())
+    await held.wait()
+    try:
         refused = await _refused(update_calendar_event(event_id, title="Renamed"))
+    finally:
+        release.set()
+        await holder
 
     assert (refused["code"], refused["retryable"]) == ("busy", True)
     assert backend.called("update_event") == []

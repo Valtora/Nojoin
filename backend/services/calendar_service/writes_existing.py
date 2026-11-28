@@ -279,6 +279,13 @@ async def _write_update(  # noqa: PLR0913 - the update's checked parts
     # Storing the read-back updates ``event`` itself, the same row.
     before_revision = event.provider_revision
     share = request.notify_attendees and patch_plan.status != "tentative"
+    if share:
+        kept = {person.email.casefold() for person in who.kept}
+        patch_plan.patch.share_with = [
+            mail.email
+            for mail in who.plan.mails
+            if mail.kind == "invitation" and mail.email.casefold() in kept
+        ]
     outcome = await _call_backend(
         db,
         row,

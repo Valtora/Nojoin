@@ -80,6 +80,10 @@ class EventPatch:
     changes: dict[str, Any] = field(default_factory=dict)
     add_attendees: list[AttendeeDraft] = field(default_factory=list)
     remove_attendees: list[str] = field(default_factory=list)
+    # Attendees already on the event whom Nojoin's records say were never
+    # invited, so a provider that delivers events itself hands it to them
+    # when notifying (every attendee of a hold being confirmed, say).
+    share_with: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -126,6 +130,9 @@ class ProviderContext:
     tokens: TokenStore
     user_zone: str
     secrets: dict[str, Any] = field(default_factory=dict)
+    # What a backend keeps between the calls of one tool call, such as the
+    # written event a later send_notifications mails.
+    scratch: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
