@@ -51,6 +51,24 @@ _LOGGABLE_ARG_NAMES = frozenset(
         "start_date",
         "end_date",
         "after_revision",
+        "calendar_id",
+        "calendar_ids",
+        "event_id",
+        "scope",
+        "all_day",
+        "show_as",
+        "notify_attendees",
+        "notify_organiser",
+        "dry_run",
+        "response",
+        "order",
+        "include_unselected",
+        "include_all_day",
+        "include_holds",
+        "refresh",
+        "series_id",
+        "time_zone",
+        "min_free_minutes",
     }
 )
 
@@ -130,12 +148,14 @@ def logged_tool(func: Callable) -> Callable:
         try:
             result = await func(*args, **kwargs)
         except ToolError as exc:
+            # A refusal that carries structured details (addresses among them)
+            # names what the log may keep instead of its full text.
             logger.warning(
                 "mcp tool %s rejected user=%s %s: %s",
                 func.__name__,
                 user_id,
                 arg_summary,
-                exc,
+                getattr(exc, "log_summary", exc),
             )
             raise
         except HTTPException as exc:

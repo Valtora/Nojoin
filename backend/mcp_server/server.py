@@ -941,6 +941,7 @@ async def mcp_session_manager_context():
 # and scope guards above must exist before the modules import them.
 from backend.mcp_server import (
     tools_analytics,  # noqa: E402,F401
+    tools_calendar,  # noqa: E402,F401
     tools_manage,  # noqa: E402,F401
     tools_people,  # noqa: E402,F401
     tools_search,  # noqa: E402,F401

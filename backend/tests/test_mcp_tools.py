@@ -34,12 +34,12 @@ from backend.mcp_server.server import (
     list_recordings,
     list_tags,
 )
+from backend.mcp_server.tools_calendar import list_calendar_events
 from backend.mcp_server.tools_manage import (
     archive_recording,
     attach_document,
     correct_utterance_text,
     link_calendar_event,
-    list_calendar_events,
     rename_recording,
     restore_recording,
     tag_recording,
@@ -2174,6 +2174,7 @@ async def seed_calendar_event(
             connection_id=connection.id,
             provider_calendar_id=f"cal-{event_id}",
             name="Work",
+            is_selected=True,
         )
         session.add(source)
         await session.flush()
