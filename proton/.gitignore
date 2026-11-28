@@ -1,0 +1,2 @@
+# Go build and test caches for offline container runs.
+/.cache/

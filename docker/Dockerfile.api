@@ -41,6 +41,32 @@ RUN pip install --no-cache-dir --require-hashes -r requirements/pip.txt && \
     python -m pip uninstall -y pip && \
     ! test -e /opt/venv/bin/pip
 
+# --- Proton helper stage ---
+# nojoin-proton, the Go helper Nojoin runs for Proton Calendar (see
+# proton/PROTOCOL.md), built as one static binary. docker/Dockerfile.api and
+# docker/Dockerfile.worker-io carry this same stage, so a build outside bake
+# needs nothing extra; keep the two identical. docker/release.hcl builds it once
+# as its proton-helper target and hands that build to both images in place of
+# this stage. Modules are checked against proton/go.sum, and GOTOOLCHAIN=local
+# stops the go command fetching a different toolchain.
+FROM golang:1.27.4-bookworm@sha256:ce59b41415e2524ae99926fe1f37ce48ba8c194dcbd2a56a65436cdcefa2bd34 AS proton-helper
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV GOTOOLCHAIN=local
+ENV CGO_ENABLED=0
+
+# Every stage upgrades the base's packages (#585): go mod download below
+# verifies the module proxy against the OS trust store.
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY proton/go.mod proton/go.sum ./
+RUN go mod download && go mod verify
+COPY proton/ ./
+RUN go build -mod=readonly -trimpath -buildvcs=false -ldflags="-s -w -buildid=" \
+        -o /out/nojoin-proton ./cmd/nojoin-proton \
+    && printf '{"v":1,"op":"version"}' | /out/nojoin-proton | grep -q '"ok":true'
+
 # --- Runtime Stage ---
 # Must be the same image as the builder stage above; see the note there.
 FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b AS runtime
@@ -77,6 +103,7 @@ RUN /usr/local/bin/python3 -m pip uninstall -y --root-user-action=ignore pip && 
     ! test -e /usr/local/bin/pip
 
 COPY --from=builder /opt/venv /opt/venv
+COPY --from=proton-helper /out/nojoin-proton /usr/local/bin/nojoin-proton
 
 # Create the non-root appuser and the mounted-volume directories it must own.
 # The image intentionally does NOT `USER appuser`: the entrypoint enters as root
