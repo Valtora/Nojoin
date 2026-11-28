@@ -27,6 +27,7 @@ jobs:
       migrations: ${{ steps.filter.outputs.migrations }}
       telemetry: ${{ steps.filter.outputs.telemetry }}
       demo: ${{ steps.filter.outputs.demo }}
+      proton: ${{ steps.filter.outputs.proton }}
 
     steps:
       - name: Checkout repository
@@ -87,6 +88,8 @@ jobs:
               - 'telemetry/**'
             demo:
               - 'demo/**'
+            proton:
+              - 'proton/**'
 
   backend-tests:
     name: Backend tests
@@ -545,6 +548,43 @@ jobs:
         working-directory: demo/server
         run: python -m pytest -q test_app.py
 
+  proton-helper:
+    # The Go helper for Proton Calendar (proton/PROTOCOL.md). Its tests run
+    # against an in-memory fake of Proton's API with made-up keys, so nothing
+    # here reaches Proton. A deployment change runs it too, because the api and
+    # worker-io images build it.
+    name: Proton helper
+    needs: detect-changes
+    if: needs.detect-changes.outputs.proton == 'true' || needs.detect-changes.outputs.deployment == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: proton
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: proton/go.mod
+          cache-dependency-path: proton/go.sum
+
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build the static binary
+        env:
+          CGO_ENABLED: "0"
+        run: go build -trimpath -o "$RUNNER_TEMP/nojoin-proton" ./cmd/nojoin-proton && printf '{"v":1,"op":"version"}' | "$RUNNER_TEMP/nojoin-proton"
+
   ci-gate:
     name: CI gate
     if: always()
@@ -559,6 +599,7 @@ jobs:
       - site-build
       - telemetry-worker
       - demo-server
+      - proton-helper
       - docs-validation
       - alembic-validation
       - whitespace

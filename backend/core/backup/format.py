@@ -107,6 +107,14 @@ RESTORE_FOREIGN_KEYS: Dict[str, Tuple[_ForeignKeySpec, ...]] = {
     "calendar_connections": (_own("user_id", "users"),),
     "calendar_sources": (_own("connection_id", "calendar_connections"),),
     "calendar_events": (_own("calendar_id", "calendar_sources"),),
+    "calendar_attendee_invites": (_own("calendar_source_id", "calendar_sources"),),
+    # The row snapshots its calendar and event, so losing either link keeps it.
+    "mcp_write_audit": (
+        _own("user_id", "users"),
+        _enrich("connection_id", "calendar_connections"),
+        _enrich("calendar_source_id", "calendar_sources"),
+        _enrich("calendar_event_id", "calendar_events"),
+    ),
     "user_tasks": (_own("user_id", "users"),),
     "p_tags": (_own("user_id", "users"), _enrich("parent_id", "p_tags")),
     "global_speakers": (_own("user_id", "users"),),

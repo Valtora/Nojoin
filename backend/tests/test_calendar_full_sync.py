@@ -29,6 +29,7 @@ from backend.tests.sqlite_schemas import (
     CALENDAR_CONNECTIONS_SCHEMA,
     CALENDAR_EVENTS_SCHEMA,
     CALENDAR_SOURCES_SCHEMA,
+    USERS_SCHEMA,
 )
 
 # The window a sync in November 2026 builds, and the one October's built.
@@ -83,6 +84,7 @@ async def _seed_calendar(
     now = datetime(2026, 10, 1)
     async with engine.begin() as connection:
         for schema in (
+            USERS_SCHEMA,
             CALENDAR_CONNECTIONS_SCHEMA,
             CALENDAR_SOURCES_SCHEMA,
             CALENDAR_EVENTS_SCHEMA,

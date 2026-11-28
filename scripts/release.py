@@ -9,9 +9,10 @@ the registry until every gate has passed:
 2. Build: the four images from a clean worktree of that commit, with no layer
    cache, into OCI layouts under ~/.cache/nojoin-release.
 3. Gates: Trivy on each layout with the release severity policy, the health and
-   non-root smoke on the same images loaded into Docker, and an advisory lookup
-   for the two subscription CLIs in worker-io, since Trivy cannot see into the
-   Codex CLI's native binary.
+   non-root smoke on the same images loaded into Docker (with a version call to
+   the Proton helper in api and worker-io), and an advisory lookup for the two
+   subscription CLIs in worker-io, since Trivy cannot see into the Codex CLI's
+   native binary.
 4. Push: the same build again, from cache, with provenance and SBOM
    attestations. Each pushed image config must match the one that was scanned.
 5. Tag: push vX.Y.Z. release.yml then checks the images came from the tag's
@@ -542,6 +543,42 @@ def assert_non_root(release: Release) -> None:
     )
 
 
+def check_proton_helper(release: Release) -> None:
+    """Run the Proton Calendar helper's version operation in api and worker-io.
+
+    The helper is a separate Go binary in both images (proton/PROTOCOL.md), so
+    the health checks would not notice it missing or broken. It needs no
+    network and no session for this operation.
+    """
+    for target in ("api", "worker-io"):
+        result = subprocess.run(
+            [
+                "docker", "run", "--rm", "--interactive", "--network", "none",
+                "--name", f"{SMOKE_PROJECT}-proton-{target}",
+                "--entrypoint", "/usr/local/bin/nojoin-proton", release.image(target),
+            ],
+            input='{"v":1,"op":"version"}',
+            capture_output=True,
+            text=True,
+        )  # fmt: skip
+        try:
+            answer = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            answer = {}
+        info = answer.get("result") or {}
+        if (
+            result.returncode != 0
+            or answer.get("ok") is not True
+            or info.get("protocol") != 1
+            or info.get("app_version") != "Other"
+        ):
+            detail = (result.stderr or result.stdout).strip()
+            raise ReleaseError(
+                f"nojoin-proton in {target} did not answer version: {detail}"
+            )
+    print("   proton helper: answers version in api and worker-io")
+
+
 def smoke(release: Release) -> None:
     """Boot api and frontend with their real dependencies, as an operator would."""
     folder = release.work / "smoke"
@@ -574,6 +611,7 @@ def smoke(release: Release) -> None:
         run([*compose, "up", "-d", "frontend"], log=release.logs / "smoke-frontend.log")
         wait_healthy(f"{SMOKE_PROJECT}-frontend", 180)
         assert_non_root(release)
+        check_proton_helper(release)
     finally:
         subprocess.run(
             [*compose, "down", "--volumes", "--remove-orphans"], capture_output=True

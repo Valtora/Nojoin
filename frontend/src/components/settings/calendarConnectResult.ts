@@ -31,11 +31,13 @@ type ReasonKind =
 const PROVIDER_NAMES: Record<CalendarProvider, string> = {
   google: "Google",
   microsoft: "Microsoft",
+  proton: "Proton",
 };
 
 export const CALENDAR_CONNECT_LABELS: Record<CalendarProvider, string> = {
   google: "Google Calendar",
   microsoft: "Outlook Calendar",
+  proton: "Proton Calendar",
 };
 
 function isCalendarProvider(value: string): value is CalendarProvider {

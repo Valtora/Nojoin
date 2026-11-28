@@ -19,6 +19,7 @@ from sqlmodel import Session, SQLModel, select
 
 from backend.core.db import async_session_maker, sync_engine  # noqa: F401
 from backend.models.calendar import (  # noqa: F401
+    CalendarAttendeeInvite,
     CalendarConnection,
     CalendarEvent,
     CalendarProvider,
@@ -28,6 +29,7 @@ from backend.models.calendar import (  # noqa: F401
 from backend.models.chat import ChatMessage  # noqa: F401
 from backend.models.document import Document  # noqa: F401
 from backend.models.document_page import DocumentPage  # noqa: F401
+from backend.models.mcp_write_audit import McpWriteAudit  # noqa: F401
 from backend.models.notes_template import NotesTemplate  # noqa: F401
 from backend.models.people_tag import PeopleTag, PeopleTagLink  # noqa: F401
 from backend.models.recording import Recording  # noqa: F401
@@ -60,6 +62,10 @@ MODELS: List[Tuple[str, Type[SQLModel]]] = [
     ("calendar_connections", CalendarConnection),
     ("calendar_sources", CalendarSource),
     ("calendar_events", CalendarEvent),
+    ("calendar_attendee_invites", CalendarAttendeeInvite),
+    # The user's change log of what assistants changed; after the calendar
+    # rows its links name.
+    ("mcp_write_audit", McpWriteAudit),
     ("user_tasks", UserTask),
     ("p_tags", PeopleTag),
     ("global_speakers", GlobalSpeaker),

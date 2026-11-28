@@ -87,6 +87,29 @@ updates:
       - dependency-name: "typescript"
         versions: [">=7.0.0"]
 
+  # --- Go module of the Proton Calendar helper (proton/) ---
+  - package-ecosystem: gomod
+    directory: /proton
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: build
+    groups:
+      go-dependencies:
+        patterns:
+          - "*"
+    ignore:
+      # go-proton-api is pinned to a pseudo-version of its master branch. Its
+      # only tags (v0.4.0 and older, 2022) predate the API changes the helper
+      # relies on and can no longer sign in, yet semver ranks them above any
+      # v0.0.0 pseudo-version, so a version update would move it back to one.
+      # Move the pin by hand: `go get github.com/ProtonMail/go-proton-api@master`
+      # in proton/, then check the replace for Proton's resty fork still
+      # matches go-proton-api's own go.mod.
+      - dependency-name: "github.com/ProtonMail/go-proton-api"
+        versions: [">=0.1.0"]
+
   # --- Container base images ---
   - package-ecosystem: docker
     directories:

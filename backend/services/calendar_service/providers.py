@@ -27,6 +27,14 @@ from .models_dto import (
     ProviderEventRecord,
     ProviderEventSyncResult,
 )
+from .provider_fields import (
+    google_attendees,
+    google_extra_fields,
+    google_status,
+    microsoft_attendees,
+    microsoft_extra_fields,
+    microsoft_status,
+)
 from .text_utils import (
     _get_microsoft_location_text,
     _is_partial_microsoft_occurrence,
@@ -112,14 +120,8 @@ def _normalise_google_event(item: dict[str, Any]) -> ProviderEventRecord | None:
         item.get("description"),
     )
     description = item.get("description")
-    attendees = [
-        {
-            "name": attendee.get("displayName") or attendee.get("email"),
-            "email": attendee.get("email"),
-        }
-        for attendee in item.get("attendees", []) or []
-        if isinstance(attendee, dict)
-    ]
+    attendees = google_attendees(item)
+    extra = google_extra_fields(item, attendees)
     if "date" in start_payload:
         start_date = date.fromisoformat(start_payload["date"])
         end_date = date.fromisoformat(end_payload.get("date", start_payload["date"]))
@@ -128,7 +130,7 @@ def _normalise_google_event(item: dict[str, Any]) -> ProviderEventRecord | None:
         return ProviderEventRecord(
             remote_id=item["id"],
             title=item.get("summary") or "Untitled event",
-            status=item.get("status") or "confirmed",
+            status=google_status(item),
             is_all_day=True,
             starts_at=None,
             ends_at=None,
@@ -140,6 +142,7 @@ def _normalise_google_event(item: dict[str, Any]) -> ProviderEventRecord | None:
             description=description,
             attendees=attendees,
             external_updated_at=_parse_iso_datetime(item.get("updated")),
+            **extra,
         )
 
     starts_at = _parse_iso_datetime(start_payload.get("dateTime"))
@@ -149,7 +152,7 @@ def _normalise_google_event(item: dict[str, Any]) -> ProviderEventRecord | None:
     return ProviderEventRecord(
         remote_id=item["id"],
         title=item.get("summary") or "Untitled event",
-        status=item.get("status") or "confirmed",
+        status=google_status(item),
         is_all_day=False,
         starts_at=starts_at,
         ends_at=ends_at or starts_at,
@@ -161,6 +164,7 @@ def _normalise_google_event(item: dict[str, Any]) -> ProviderEventRecord | None:
         description=description,
         attendees=attendees,
         external_updated_at=_parse_iso_datetime(item.get("updated")),
+        **extra,
     )
 
 
@@ -252,22 +256,8 @@ def _normalise_microsoft_event(item: dict[str, Any]) -> ProviderEventRecord | No
         body_content,
     )
     description = item.get("bodyPreview")
-    attendees = []
-    for attendee in item.get("attendees", []) or []:
-        if not isinstance(attendee, dict):
-            continue
-        if attendee.get("type") == "resource":
-            continue
-        email_address = attendee.get("emailAddress")
-        if not isinstance(email_address, dict):
-            continue
-        address = email_address.get("address")
-        attendees.append(
-            {
-                "name": email_address.get("name") or address,
-                "email": address,
-            }
-        )
+    attendees = microsoft_attendees(item)
+    extra = microsoft_extra_fields(item)
     if item.get("isAllDay"):
         start_date = date.fromisoformat(item["start"]["dateTime"][:10])
         end_date = date.fromisoformat(item["end"]["dateTime"][:10])
@@ -276,7 +266,7 @@ def _normalise_microsoft_event(item: dict[str, Any]) -> ProviderEventRecord | No
         return ProviderEventRecord(
             remote_id=item["id"],
             title=item.get("subject") or "Untitled event",
-            status="cancelled" if item.get("isCancelled") else "confirmed",
+            status=microsoft_status(item),
             is_all_day=True,
             starts_at=None,
             ends_at=None,
@@ -288,6 +278,7 @@ def _normalise_microsoft_event(item: dict[str, Any]) -> ProviderEventRecord | No
             description=description,
             attendees=attendees,
             external_updated_at=_parse_iso_datetime(item.get("lastModifiedDateTime")),
+            **extra,
         )
 
     starts_at = _parse_iso_datetime(item.get("start", {}).get("dateTime"))
@@ -297,7 +288,7 @@ def _normalise_microsoft_event(item: dict[str, Any]) -> ProviderEventRecord | No
     return ProviderEventRecord(
         remote_id=item["id"],
         title=item.get("subject") or "Untitled event",
-        status="cancelled" if item.get("isCancelled") else "confirmed",
+        status=microsoft_status(item),
         is_all_day=False,
         starts_at=starts_at,
         ends_at=ends_at or starts_at,
@@ -309,6 +300,7 @@ def _normalise_microsoft_event(item: dict[str, Any]) -> ProviderEventRecord | No
         description=description,
         attendees=attendees,
         external_updated_at=_parse_iso_datetime(item.get("lastModifiedDateTime")),
+        **extra,
     )
 
 
@@ -455,3 +447,42 @@ async def _sync_microsoft_events(
     return ProviderEventSyncResult(
         events=events, deleted_remote_ids=deleted_remote_ids, cursor=sync_cursor
     )
+
+
+async def _fetch_google_event(
+    access_token: str, calendar_id: str, event_id: str
+) -> ProviderEventRecord | None:
+    """One event fresh from Google, or None when it is gone or cancelled."""
+    url = (
+        GOOGLE_EVENTS_URL_TEMPLATE.format(calendar_id=quote(calendar_id, safe=""))
+        + f"/{quote(event_id, safe='')}"
+    )
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.get(
+            url, headers={"Authorization": f"Bearer {access_token}"}
+        )
+    if response.status_code in {HTTPStatus.NOT_FOUND, HTTPStatus.GONE}:
+        return None
+    response.raise_for_status()
+    return _normalise_google_event(response.json())
+
+
+async def _fetch_microsoft_event(
+    access_token: str, event_id: str
+) -> ProviderEventRecord | None:
+    """One event fresh from Graph, or None when it is gone or cancelled."""
+    url = (
+        f"{MICROSOFT_GRAPH_URL}/me/events/{quote(event_id, safe='')}"
+        f"?{urlencode({'$select': MICROSOFT_EVENT_SELECT})}"
+    )
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Accept": "application/json",
+        "Prefer": 'outlook.timezone="UTC"',
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.get(url, headers=headers)
+    if response.status_code in {HTTPStatus.NOT_FOUND, HTTPStatus.GONE}:
+        return None
+    response.raise_for_status()
+    return _normalise_microsoft_event(response.json())

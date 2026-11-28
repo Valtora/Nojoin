@@ -24,6 +24,8 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 
 - **Each user accepts the terms of use.** Every account except the setup account sees the terms once, at its next page load, and cannot start a recording or import audio until it accepts. Until then the API answers that account's new captures and imports with 403 and the code `legal_acceptance_required`, so an API client acting for it needs the person to accept once in the web app (#1007).
 - **The MCP connector asks for sign-in from the first request.** `MCP_ANONYMOUS_DISCOVERY` now defaults to `false`, so every unauthenticated request to `/mcp` gets `401` with the OAuth challenge, and Claude's **Add custom connector** dialog detects **Sign in now** and **Register automatically**. Codex Desktop loses the anonymous handshake it started sign-in from, so mark the server for OAuth in Codex (`codex mcp login nojoin`, or `auth = "oauth"` in `~/.codex/config.toml`), or set `MCP_ANONYMOUS_DISCOVERY=true` to keep the anonymous handshake (#1092).
+- **`list_calendar_events` lists your selected calendars only, and matches dates by overlap.** All-day events now fall inside date ranges and sort by their date, a bare `end_date` covers that whole day in your Nojoin time zone, and a refusal is a JSON error object with a code. Each event keeps its first eight fields as before and gains offset-aware times, people, holds and recurrence (#1094).
+- **`mcp:write` now includes calendar writes.** On a calendar Nojoin can write to (Proton), an assistant with write access can create, change and cancel events at the provider, where a cancelled event is removed, and email the people on them when asked. Existing grants gain this without reconnecting; revoke one under **Settings > Integrations > Connected apps** to withdraw it (#1094).
 
 ## Changes
 
@@ -74,6 +76,8 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 - Opening a meeting from **Person Details** while the person has changes you have not saved asks first, and staying keeps the dialog open with your changes. The link used to leave at once and lose them (#972).
 - **Person Details** shows a person's meetings when an older meeting's transcript holds a time too large to read, as one restored from an archive or edited by hand can, and counts that part of the transcript as no speech. The meetings failed to load (#972).
 - In **Person Details**, the first Tab shows **Skip to contact details**, which takes keyboard focus straight to **Full Name**. Reaching the form used to take a Tab for every meeting listed, 53 presses with the full 50 (#972).
+- **Proton Calendar** can be connected under **Settings > Integrations > Calendars**, through an unofficial route: Proton's private API, with the risks shown before you sign in. Signing in answers as soon as the account is connected, and the first sync runs in the background with a progress bar you can close. Its calendars then sync like Google and Outlook ones, and assistants can write to them (#1094).
+- Calendar events keep the time zone they were written in, the organiser, each attendee's answer and your own, whether they show as busy or free, and their series. An Outlook event you organise that shows as tentative is now a hold (#1094).
 
 ### Settings and administration
 
@@ -83,12 +87,14 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 - In **Settings > AI providers > Advanced > Model downloads**, the Nemotron row says **Waiting to retry** for the ten minutes after a failed preparation, as the word timing aligner's row does. A row in that wait no longer says **Retry** starts now while another preparation keeps the button disabled (#971).
 - The **AI providers** and **Transcription** settings pages ask for a provider's model list only when the provider has a key or address and you are an administrator. The server refused each such request on a fresh install with no AI key, and from anyone who is not an administrator (#971).
 - Nojoin can sign people in through an OpenID Connect provider such as Authentik or Keycloak, set up with the new `NOJOIN_OIDC_*` variables. New people get an account at their first sign-in, existing accounts link under **Settings > Profile and security > Single sign-on**, and the provider's groups can make people Admins and can be shared with. `NOJOIN_PASSWORD_LOGIN` keeps passwords for everyone, for Owners only, or for nobody (#1088).
+- **Settings > Integrations** has **Changes made by assistants**: every change an assistant made to your calendars, which app made it, who was emailed and the outcome, kept for 12 months. The MCP consent page and **Connected apps** say that calendar changes happen at your provider and can email people (#1094).
 
 ### API and MCP
 
 - `POST /api/v1/users/me/legal-acceptance` records the signed-in user's acceptance from a browser session, and `/users/me`, the users list and both sign-in answers carry `legal_acceptance_required`. The MCP consent page shows the terms first to an account that has not accepted them (#1007).
 - `GET /api/v1/system/download-progress` answers 422 for a `model` it does not know, where it returned idle progress. Without `model`, a Nemotron or aligner download that a stopped worker left behind no longer outranks a newer preparation's progress. Two `POST /api/v1/system/models/prepare` requests sent together queue one preparation, and the second answers 409 (#971).
 - New routes: `GET /api/v1/login/methods`, `GET /api/v1/login/oidc/start`, `GET /api/v1/login/oidc/callback` and `POST /api/v1/login/oidc/link` for single sign-on; `GET`, `PUT` and `DELETE /api/v1/recordings/{id}/shares` and `DELETE /api/v1/recordings/{id}/shares/me` and `POST /api/v1/recordings/{id}/shares/me/restore-request` for sharing; `GET /api/v1/users/directory` and `/users/directory/groups` for whom to share with; and `GET /api/v1/speakers/recordings/{id}/speaker-candidates`. `GET /api/v1/recordings` takes `scope=all|mine|shared` and each recording carries `access`, `owner` and `can_leave`. `PUT /api/v1/transcripts/{id}/notes` takes an optional `base_revision` and answers 409 with the code `notes_conflict` when the notes changed since. MCP tools act with the caller's access, so `list_recordings` and `search_context` also cover meetings shared with them, and each result of `list_recordings` carries `access` and, when shared, `owner` (#1088).
+- Seven MCP calendar tools are new: `list_calendars`, `get_calendar_event`, `get_free_busy`, `create_calendar_event`, `update_calendar_event`, `cancel_calendar_event` and `respond_to_calendar_invitation`. Writes email nobody unless `notify_attendees` is true, except a reply to an invitation, which goes to the organiser unless `notify_organiser` is false; they support holds, recurring events, dry runs, idempotency keys and revisions ([MCP.md](../MCP.md#calendars)). New routes: `POST /api/v1/calendar/proton/connect` with its `/totp` and `/unlock` steps, and `GET /api/v1/calendar/assistant-changes` (#1094).
 
 ### Deployment and dependencies
 
@@ -100,6 +106,7 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 - In `docker-compose.example.yml`, `worker-cpu`, `worker-io` and `worker-parse` autoscale from one child, and a child that has used more than 400,000 KiB is replaced after its task, so an idle install runs three prefork children instead of nine (#1054).
 - The worker and worker-io images carry dnspython 2.9.2 in place of 2.9.0, which fixes CVE-2026-128089 (#1072).
 - `alembic.ini` moves from the repository root to `backend/alembic.ini`, and the bundled Pyannote models from `bundled_models/` to `backend/bundled_models/`. `docker compose exec api alembic ...` works as before, and in a source checkout Alembic now runs as `alembic -c backend/alembic.ini ...` (#1089).
+- The api and worker-io images carry `nojoin-proton`, a small Go program that speaks Proton's API; nothing changes in Compose. With a Proton account connected, both reach `mail.proton.me` over HTTPS (#1094).
 
 ## Upgrade
 
@@ -109,6 +116,7 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 - To autoscale the prefork lanes, copy the `worker-cpu`, `worker-io` and `worker-parse` commands from `docker-compose.example.yml` into your `docker-compose.yml`, which otherwise keeps its fixed pools. The idle restart of `worker-gpu` needs no change (#1054).
 - To use single sign-on, copy the `NOJOIN_OIDC_*` and `NOJOIN_PASSWORD_LOGIN` lines from `docker-compose.example.yml` into the `api` service of your `docker-compose.yml`, and set them in `.env` ([ADMIN.md](../ADMIN.md#single-sign-on)). Without them nothing changes (#1088).
 - An `.env` copied from an earlier `.env.example` sets `MCP_ANONYMOUS_DISCOVERY=true`, and an api service copied from an earlier `docker-compose.example.yml` passes `${MCP_ANONYMOUS_DISCOVERY:-true}`, so the anonymous MCP handshake stays on after the upgrade. To take the new default, set `MCP_ANONYMOUS_DISCOVERY=false` in `.env`, or remove it there and change the compose line to `:-false`. Keep `true` only if people still connect Codex Desktop without marking the server for OAuth. A Claude connector added with **No sign-in** never signs anyone in: remove it and add it again with **Sign in now** (#1092).
+- The first calendar sync after the upgrade fetches every selected calendar in full, to fill the new event fields. It takes a little longer than usual and needs nothing from you (#1094).
 
 ## Migration
 
@@ -118,6 +126,7 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 - One environment variable is new: `NOJOIN_WORKER_IDLE_RECYCLE_MINUTES`, empty for 15 minutes and `0` for off, which `docker-compose.example.yml` passes to `worker-gpu`. An existing `docker-compose.yml` does not pass it, so the default applies until you add it to `worker-gpu`'s `environment:` block. No config key changed, and `nginx/` needs no action (#1054).
 - Backups stay in format 3 and carry each user's acceptance time. An archive made before 3.2.0 restores its users with none, so they are asked at their next visit (#1007).
 - Three more Alembic revisions run after `ed5d42732014`. `04b28b70a1fb` adds the `user_identities` table, which links an account to its single sign-on identity and holds its groups. `3885627f5053` adds `recording_shares`. `7c1d2e9a4b60` adds `recording_restore_requests`, which ties an ask to bring back a shared meeting to the owner's task for it. None changes an existing table. Eleven environment variables are new, all optional: `NOJOIN_OIDC_ISSUER`, `NOJOIN_OIDC_CLIENT_ID`, `NOJOIN_OIDC_CLIENT_SECRET`, `NOJOIN_OIDC_DISPLAY_NAME`, `NOJOIN_OIDC_SCOPES`, `NOJOIN_OIDC_USERNAME_CLAIM`, `NOJOIN_OIDC_GROUPS_CLAIM`, `NOJOIN_OIDC_ALLOWED_GROUPS`, `NOJOIN_OIDC_ADMIN_GROUPS`, `NOJOIN_OIDC_AUTO_CREATE` and `NOJOIN_PASSWORD_LOGIN`. Backups carry all three tables (#1088).
+- `ac4dec3c4483` adds the event fields above to `calendar_events` with `range_start` and `range_end` backfilled (all-day events at midnight UTC until the next sync moves them into their calendar's zone), `calendar_connections.provider_secrets_encrypted`, and the `calendar_attendee_invites` and `mcp_write_audit` tables, and clears every sync cursor. Backups stay in format 3, carry both new tables, and never carry a Proton session or key passphrase: a restored Proton account shows **Reconnect required** (#1094).
 
 ## Rollback
 
@@ -127,6 +136,7 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 - The downgrade drops `users.legal_accepted_at` and every recorded acceptance, so upgrading again asks every account except the setup account once more.
 - 3.1.0 restores an archive made on 3.2.0, without the acceptance times.
 - The downgrade also drops `recording_restore_requests`, `recording_shares` and `user_identities`: every share goes, the asks to bring a meeting back become ordinary tasks, and accounts created through single sign-on are left without a way to sign in until an administrator gives them a password (#1088).
+- Downgrading past `ac4dec3c4483` deletes Proton connections, with their calendars and events, and drops the change log and the invite records (#1094).
 
 ## Known issues
 

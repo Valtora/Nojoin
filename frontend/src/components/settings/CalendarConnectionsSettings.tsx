@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/Switch";
 import { COLOR_PALETTE } from "@/lib/constants";
 import {
   CalendarConnection,
+  CalendarOAuthProvider,
   CalendarOverview,
   CalendarProvider,
   CalendarSyncStatus,
@@ -35,6 +36,8 @@ import {
   CALENDAR_CONNECT_LABELS as CONNECT_LABELS,
   describeCalendarConnectFailure,
 } from "./calendarConnectResult";
+import CalendarSyncProgress from "./CalendarSyncProgress";
+import ProtonConnectModal, { SYNC_POLL_MS } from "./ProtonConnectModal";
 import SettingsBlock from "./SettingsBlock";
 import SettingsCallout from "./SettingsCallout";
 import SettingsCard from "./SettingsCard";
@@ -53,6 +56,7 @@ import { loadingButtonProps } from "@/components/ui/loadingButton";
 const PROVIDER_LABELS: Record<CalendarProvider, string> = {
   google: "Google",
   microsoft: "Microsoft",
+  proton: "Proton",
 };
 
 const STATUS_LABELS: Record<CalendarSyncStatus, string> = {
@@ -78,6 +82,20 @@ function replaceConnection(
       connection.id === updatedConnection.id ? updatedConnection : connection,
     ),
   };
+}
+
+
+function upsertConnection(
+  currentOverview: CalendarOverview | null,
+  connection: CalendarConnection,
+): CalendarOverview | null {
+  if (!currentOverview) {
+    return currentOverview;
+  }
+  const known = currentOverview.connections.some((item) => item.id === connection.id);
+  return known
+    ? replaceConnection(currentOverview, connection)
+    : { ...currentOverview, connections: [...currentOverview.connections, connection] };
 }
 
 
@@ -108,6 +126,11 @@ export default function CalendarConnectionsSettings() {
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const { addNotification } = useNotificationStore();
   const handledCallbackRef = useRef(false);
+  // Proton signs in inside Nojoin, so it opens a modal instead of a redirect.
+  const [protonModal, setProtonModal] = useState<{ open: boolean; address: string | null }>({
+    open: false,
+    address: null,
+  });
   // A sign-in arrives by a full page load, so the outcome it carries in the
   // query string is read once, when the card first renders. The effect below
   // then strips it from the address bar.
@@ -175,16 +198,52 @@ export default function CalendarConnectionsSettings() {
     void loadOverview();
   }, [addNotification, loadOverview, pathname, router, searchParams]);
 
+  // Proton needs no app credentials, so only the OAuth providers decide
+  // whether an administrator has setting up to do.
   const configuredProviders = useMemo(
-    () => overview?.providers.filter((provider) => provider.configured) ?? [],
+    () =>
+      overview?.providers.filter(
+        (provider) => provider.configured && provider.provider !== "proton",
+      ) ?? [],
     [overview],
   );
 
+  const handleProtonConnected = (connection: CalendarConnection) => {
+    setOverview((currentOverview) => upsertConnection(currentOverview, connection));
+    addNotification({ type: "success", message: "Proton Calendar connected successfully" });
+  };
+
+  const handleConnectionUpdated = useCallback((connection: CalendarConnection) => {
+    setOverview((currentOverview) => upsertConnection(currentOverview, connection));
+  }, []);
+
+  // A sync under way (a Proton account's first, run in the background)
+  // reports its progress on the connection: read it until it finishes.
+  const anySyncing =
+    overview?.connections.some((connection) => connection.sync_status === "syncing") ?? false;
+  useEffect(() => {
+    if (!anySyncing) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      getCalendarOverview()
+        .then(setOverview)
+        .catch(() => undefined);
+    }, SYNC_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [anySyncing]);
+
   const handleConnect = async (provider: CalendarProvider) => {
     setConnectFailure(null);
+    if (provider === "proton") {
+      setProtonModal({ open: true, address: null });
+      return;
+    }
     setBusyKey(`connect:${provider}`);
     try {
-      const { authorisation_url } = await startCalendarAuthorisation(provider);
+      const { authorisation_url } = await startCalendarAuthorisation(
+        provider as CalendarOAuthProvider,
+      );
       window.location.assign(authorisation_url);
 
         } catch (error: unknown) {
@@ -317,8 +376,16 @@ export default function CalendarConnectionsSettings() {
     <SettingsCard
       id="integrations-calendars"
       title="Calendars"
-      description="Connect a Google or Outlook account, approve access on its own sign-in page, then choose which calendars Nojoin shows you."
+      description="Connect a Google, Outlook or Proton account, then choose which calendars Nojoin shows you."
     >
+      <ProtonConnectModal
+        key={protonModal.address ?? "new"}
+        open={protonModal.open}
+        reconnectAddress={protonModal.address}
+        onClose={() => setProtonModal({ open: false, address: null })}
+        onConnected={handleProtonConnected}
+        onUpdated={handleConnectionUpdated}
+      />
       {connectFailure && (
         <SettingsBlock>
           <div role="alert">
@@ -354,9 +421,20 @@ export default function CalendarConnectionsSettings() {
             return (
               <SettingsRow
                 key={provider.provider}
-                label={CONNECT_LABELS[provider.provider]}
+                label={
+                  provider.provider === "proton" ? (
+                    <span className="flex flex-wrap items-center gap-2">
+                      {CONNECT_LABELS.proton}
+                      <SettingsStatusBadge tone="warning">Unofficial</SettingsStatusBadge>
+                    </span>
+                  ) : (
+                    CONNECT_LABELS[provider.provider]
+                  )
+                }
                 description={
-                  provider.configured
+                  provider.provider === "proton"
+                    ? "Sign in with your Proton password. Nojoin uses Proton's private API; read the risks before you connect."
+                    : provider.configured
                     ? `You will be redirected to ${PROVIDER_LABELS[provider.provider]} to sign in and approve access.`
                     : isAdmin
                       ? "Needs this installation's app credentials, under Advanced."
@@ -433,6 +511,23 @@ export default function CalendarConnectionsSettings() {
                     description={`${STATUS_LABELS[connection.sync_status]}. ${connection.selected_calendar_count} calendar${connection.selected_calendar_count === 1 ? "" : "s"} selected.`}
                     aside={
                       <div className="flex flex-wrap gap-2">
+                        {connection.provider === "proton" &&
+                          connection.sync_status === "reauthorisation_required" && (
+                            <ButtonBase
+                              data-ui-fill="action"
+                              data-ui-hover="action-hover"
+                              data-ui-active="action-active"
+                              data-ui-border="full"
+                              chrome="action"
+                              type="button"
+                              onClick={() =>
+                                setProtonModal({ open: true, address: connection.email ?? null })
+                              }
+                              className={SETTINGS_BUTTON_PRIMARY}
+                            >
+                              Reconnect
+                            </ButtonBase>
+                          )}
                         <ButtonBase
                           data-ui-fill="card"
                           data-ui-hover="inset"
@@ -470,6 +565,11 @@ export default function CalendarConnectionsSettings() {
                       </div>
                     }
                   >
+                    {connection.provider === "proton" && connection.sync_status === "syncing" && (
+                      <div className="mb-3">
+                        <CalendarSyncProgress connection={connection} />
+                      </div>
+                    )}
                     {connection.sync_error && (
                       <SettingsCallout tone="warning" className="mb-3">
                         <span className="flex items-start gap-2">

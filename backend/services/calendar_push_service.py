@@ -50,6 +50,7 @@ from backend.services.calendar_service import (
     _truncate_error,
     get_provider_runtime_config,
 )
+from backend.services.calendar_service.constants import OAUTH_PROVIDERS
 from backend.utils.time import utc_now
 
 logger = logging.getLogger(__name__)
@@ -608,6 +609,9 @@ async def reconcile_push_channels_for_connection(
     abort the rest. A connection awaiting a reconnect only has its channel rows
     dropped, with no token request.
     """
+    if connection.provider not in OAUTH_PROVIDERS:
+        # Proton has no push notifications; its sync polls.
+        return
     if connection.sync_status == CalendarSyncStatus.REAUTHORISATION_REQUIRED.value:
         await _drop_channels_awaiting_reconnect(db, connection)
         return

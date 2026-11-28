@@ -41,7 +41,11 @@ SYNC_WINDOW_MONTHS_FORWARD = 12
 PROVIDER_DISPLAY_NAMES = {
     CalendarProvider.GOOGLE.value: "Google",
     CalendarProvider.MICROSOFT.value: "Microsoft",
+    CalendarProvider.PROTON.value: "Proton",
 }
+# The providers connected through an OAuth redirect with installation-wide app
+# credentials. Proton signs in with the user's own credentials instead.
+OAUTH_PROVIDERS = (CalendarProvider.GOOGLE.value, CalendarProvider.MICROSOFT.value)
 
 PROVIDER_ENV_KEYS = {
     CalendarProvider.GOOGLE.value: {
@@ -71,7 +75,7 @@ ACCOUNT_REDIRECT_PATHS = {
         status_value: f"/settings/integrations?{urlencode({'calendar': status_value, 'provider': provider})}"
         for status_value in ACCOUNT_REDIRECT_STATUSES
     }
-    for provider in PROVIDER_DISPLAY_NAMES
+    for provider in OAUTH_PROVIDERS
 }
 
 TRAILING_URL_PUNCTUATION = ".,);]>"
@@ -114,5 +118,13 @@ MICROSOFT_EVENT_SELECT = ",".join(
         "onlineMeeting",
         "onlineMeetingUrl",
         "attendees",
+        "showAs",
+        "organizer",
+        "isOrganizer",
+        "responseStatus",
+        "originalStartTimeZone",
+        "originalEndTimeZone",
+        "originalStart",
+        "changeKey",
     ]
 )

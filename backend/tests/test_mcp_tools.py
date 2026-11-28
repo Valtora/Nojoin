@@ -34,12 +34,12 @@ from backend.mcp_server.server import (
     list_recordings,
     list_tags,
 )
+from backend.mcp_server.tools_calendar import list_calendar_events
 from backend.mcp_server.tools_manage import (
     archive_recording,
     attach_document,
     correct_utterance_text,
     link_calendar_event,
-    list_calendar_events,
     rename_recording,
     restore_recording,
     tag_recording,
@@ -417,7 +417,10 @@ SCHEMA_STATEMENTS = [
         sync_error VARCHAR(512),
         last_sync_started_at DATETIME,
         last_sync_completed_at DATETIME,
-        last_synced_at DATETIME
+        last_synced_at DATETIME,
+        provider_secrets_encrypted TEXT,
+        sync_progress_done INTEGER,
+        sync_progress_total INTEGER
     )
     """,
     """
@@ -461,6 +464,21 @@ SCHEMA_STATEMENTS = [
         meeting_url VARCHAR(2048),
         source_url VARCHAR(2048),
         external_updated_at DATETIME,
+        start_time_zone VARCHAR(64),
+        end_time_zone VARCHAR(64),
+        range_start DATETIME,
+        range_end DATETIME,
+        show_as VARCHAR(16) NOT NULL DEFAULT 'busy',
+        organiser JSON,
+        is_organiser BOOLEAN,
+        my_response VARCHAR(16),
+        series_key VARCHAR(512),
+        original_start DATETIME,
+        original_start_date DATE,
+        occurrence_type VARCHAR(16) NOT NULL DEFAULT 'single',
+        recurrence_rule TEXT,
+        provider_revision VARCHAR(255),
+        provider_data JSON,
         UNIQUE(calendar_id, provider_event_id)
     )
     """,
@@ -2158,6 +2176,7 @@ async def seed_calendar_event(
             connection_id=connection.id,
             provider_calendar_id=f"cal-{event_id}",
             name="Work",
+            is_selected=True,
         )
         session.add(source)
         await session.flush()

@@ -10,11 +10,13 @@ shows. All tools are scoped to the authenticated user resolved by
 :class:`backend.mcp_server.auth.MCPAuthMiddleware`.
 
 Two access tiers: ``mcp:read`` for every read tool and ``mcp:write`` for
-recoverable mutations (organising recordings, tasks, transcript
-corrections, notes regeneration, text documents, People maintenance).
-There is deliberately no destructive tier: the connector's strongest verb
-is moving a recording to the bin, and permanent deletion exists only in
-the web app. Grants keep the scopes they were issued with; tools beyond a
+mutations: recoverable changes to the library (organising recordings,
+tasks, transcript corrections, notes regeneration, text documents, People
+maintenance) and, on calendars list_calendars shows as writable, changes
+at the user's calendar provider, which cancel_calendar_event can remove
+and which can email other people when the call asks. Nothing in the
+library is deleted permanently: its strongest verb is moving a recording
+to the bin. Grants keep the scopes they were issued with; tools beyond a
 grant's scopes refuse with reconnect instructions.
 """
 
@@ -56,13 +58,18 @@ MCP_SERVER_INSTRUCTIONS = (
     "transcripts, AI meeting notes, attached documents, tags, tasks, "
     "per-meeting speakers, and the People library. Read tools cover all of "
     "these, plus search_context for semantic search across every meeting "
-    "and document. Write tools (mcp:write) cover recoverable changes: "
-    "organising recordings (rename, tag, archive, bin, restore), managing "
-    "tasks, correcting transcripts, regenerating notes, attaching text "
-    "documents, appending user notes, and maintaining People records. "
-    "Nothing here deletes permanently: the strongest deletion verb is "
-    "moving a recording to the bin, which the user can restore or empty "
-    "in the web app. Recording identifiers are the string `id` values "
+    "and document. Write tools (mcp:write) cover organising recordings "
+    "(rename, tag, archive, bin, restore), managing tasks, correcting "
+    "transcripts, regenerating notes, attaching text documents, appending "
+    "user notes, and maintaining People records; nothing in the library is "
+    "deleted permanently, and the strongest deletion verb is moving a "
+    "recording to the bin, which the user can restore or empty in the web "
+    "app. Calendar tools read the user's synced calendars, and where "
+    "list_calendars shows a calendar as writable they create, change, "
+    "cancel and answer events at the user's real calendar provider; "
+    "cancel_calendar_event removes an event there. Calendar writes can "
+    "email other people when asked to. Ask the user before every calendar "
+    "write. Recording identifiers are the string `id` values "
     "returned by list_recordings; person identifiers are the integer "
     "`id` values from list_people. Read "
     "transcripts with get_transcript for prose, or "
@@ -941,6 +948,7 @@ async def mcp_session_manager_context():
 # and scope guards above must exist before the modules import them.
 from backend.mcp_server import (
     tools_analytics,  # noqa: E402,F401
+    tools_calendar,  # noqa: E402,F401
     tools_manage,  # noqa: E402,F401
     tools_people,  # noqa: E402,F401
     tools_search,  # noqa: E402,F401

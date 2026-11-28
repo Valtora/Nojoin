@@ -155,3 +155,29 @@ describe("CalendarConnectionsSettings after a sign-in fails", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 });
+
+describe("CalendarConnectionsSettings with a Proton account syncing", () => {
+  it("shows the account as syncing with its progress", async () => {
+    vi.mocked(getCalendarOverview).mockResolvedValueOnce({
+      providers: [{ provider: "proton", display_name: "Proton", configured: true }],
+      connections: [
+        {
+          id: 4,
+          provider: "proton",
+          email: "alice@example.com",
+          sync_status: "syncing",
+          sync_progress_done: 2,
+          sync_progress_total: 8,
+          selected_calendar_count: 1,
+          push_active: false,
+          calendars: [],
+        },
+      ],
+    } as CalendarOverview);
+    render(<CalendarConnectionsSettings />);
+
+    expect(await screen.findByText("Syncing events: 2 of 8 steps")).toBeTruthy();
+    expect(screen.getByText(/^Syncing\./)).toBeTruthy();
+    expect(screen.getByText("Unofficial")).toBeTruthy();
+  });
+});

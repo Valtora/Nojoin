@@ -3,7 +3,7 @@
 import { ButtonBase, InputBase } from "@/components/ui/nativeBases";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  CalendarProvider,
+  CalendarOAuthProvider,
   CalendarProviderConfigUpdate,
   CalendarProviderStatus,
 } from "@/types";
@@ -52,8 +52,8 @@ const EMPTY_FORM: ProviderFormState = {
 
 function buildInitialForms(
   providers: CalendarProviderStatus[],
-): Record<CalendarProvider, ProviderFormState> {
-  const forms: Record<CalendarProvider, ProviderFormState> = {
+): Record<CalendarOAuthProvider, ProviderFormState> {
+  const forms: Record<CalendarOAuthProvider, ProviderFormState> = {
     google: { ...EMPTY_FORM, tenant_id: "" },
     microsoft: { ...EMPTY_FORM },
   };
@@ -78,12 +78,12 @@ function buildInitialForms(
 
 export default function CalendarProviderSettings() {
   const [providers, setProviders] = useState<CalendarProviderStatus[]>([]);
-  const [forms, setForms] = useState<Record<CalendarProvider, ProviderFormState>>({
+  const [forms, setForms] = useState<Record<CalendarOAuthProvider, ProviderFormState>>({
     google: { ...EMPTY_FORM, tenant_id: "" },
     microsoft: { ...EMPTY_FORM },
   });
   const [loading, setLoading] = useState(true);
-  const [savingProvider, setSavingProvider] = useState<CalendarProvider | null>(
+  const [savingProvider, setSavingProvider] = useState<CalendarOAuthProvider | null>(
     null,
   );
   const { addNotification } = useNotificationStore();
@@ -111,7 +111,7 @@ export default function CalendarProviderSettings() {
   }, [loadProviders]);
 
   const updateForm = (
-    provider: CalendarProvider,
+    provider: CalendarOAuthProvider,
     updater: Partial<ProviderFormState>,
   ) => {
     setForms((currentForms) => ({
@@ -123,7 +123,7 @@ export default function CalendarProviderSettings() {
     }));
   };
 
-  const handleSave = async (provider: CalendarProvider) => {
+  const handleSave = async (provider: CalendarOAuthProvider) => {
     setSavingProvider(provider);
     const form = forms[provider];
     const payload: CalendarProviderConfigUpdate = {
@@ -183,7 +183,7 @@ export default function CalendarProviderSettings() {
   };
 
   const savedForms = useMemo(() => buildInitialForms(providers), [providers]);
-  const isDirty = (provider: CalendarProvider) =>
+  const isDirty = (provider: CalendarOAuthProvider) =>
     JSON.stringify(forms[provider]) !== JSON.stringify(savedForms[provider]);
   useSettingsDraft(
     "calendar-providers",

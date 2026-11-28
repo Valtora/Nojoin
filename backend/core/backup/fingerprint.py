@@ -42,6 +42,10 @@ FINGERPRINT_IGNORED_TABLES: Dict[str, str] = {
         "A copy of each provider's calendar. The sync replaces it on a timer, and a "
         "restored connection fetches it again."
     ),
+    "mcp_write_audit": (
+        "The assistants' change log. It grows with every write and is pruned on a "
+        "timer, and an archive a few entries behind loses no library data."
+    ),
 }
 
 # Columns left out of a table's digest. "*" applies to every table: updated_at moves
@@ -52,6 +56,9 @@ FINGERPRINT_IGNORED_COLUMNS: Dict[str, frozenset[str]] = {
         {
             "access_token_encrypted",
             "refresh_token_encrypted",
+            "provider_secrets_encrypted",
+            "sync_progress_done",
+            "sync_progress_total",
             "token_expires_at",
             "sync_status",
             "sync_error",

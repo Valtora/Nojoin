@@ -110,7 +110,10 @@ CALENDAR_SCHEMA = [
         sync_error VARCHAR(512),
         last_sync_started_at DATETIME,
         last_sync_completed_at DATETIME,
-        last_synced_at DATETIME
+        last_synced_at DATETIME,
+        provider_secrets_encrypted TEXT,
+        sync_progress_done INTEGER,
+        sync_progress_total INTEGER
     )
     """,
     """
@@ -153,7 +156,22 @@ CALENDAR_SCHEMA = [
         attendees JSON,
         meeting_url VARCHAR(2048),
         source_url VARCHAR(2048),
-        external_updated_at DATETIME
+        external_updated_at DATETIME,
+        start_time_zone VARCHAR(64),
+        end_time_zone VARCHAR(64),
+        range_start DATETIME,
+        range_end DATETIME,
+        show_as VARCHAR(16) NOT NULL DEFAULT 'busy',
+        organiser JSON,
+        is_organiser BOOLEAN,
+        my_response VARCHAR(16),
+        series_key VARCHAR(512),
+        original_start DATETIME,
+        original_start_date DATE,
+        occurrence_type VARCHAR(16) NOT NULL DEFAULT 'single',
+        recurrence_rule TEXT,
+        provider_revision VARCHAR(255),
+        provider_data JSON
     )
     """,
     """
@@ -726,9 +744,22 @@ def test_normalise_google_event_captures_description_and_attendees() -> None:
     )
     assert event is not None
     assert event.description == "Quarterly roadmap review"
+    # name and email stay first and as they were; the notes prompts read them.
     assert event.attendees == [
-        {"name": "Alice Smith", "email": "alice@example.com"},
-        {"name": "bob@example.com", "email": "bob@example.com"},
+        {
+            "name": "Alice Smith",
+            "email": "alice@example.com",
+            "response": None,
+            "role": "required",
+            "is_self": False,
+        },
+        {
+            "name": "bob@example.com",
+            "email": "bob@example.com",
+            "response": None,
+            "role": "required",
+            "is_self": False,
+        },
     ]
 
 
@@ -758,7 +789,13 @@ def test_normalise_microsoft_event_captures_body_preview_and_skips_resources() -
     assert event.description == "Plain text agenda"
     # The resource (meeting room) attendee is skipped.
     assert event.attendees == [
-        {"name": "Carol", "email": "carol@example.com"},
+        {
+            "name": "Carol",
+            "email": "carol@example.com",
+            "response": None,
+            "role": "required",
+            "is_self": False,
+        },
     ]
 
 

@@ -145,6 +145,7 @@ Nojoin encrypts these secrets in the database with a key derived from `DATA_ENCR
 
 - calendar provider OAuth client secrets
 - users' calendar access and refresh tokens
+- a Proton connection's session UID and the salted key passphrase derived from the user's Proton password, which opens every key on that Proton account and so could also decrypt the user's Proton Mail
 - calendar push-notification channel secrets
 - CLI OAuth subscription credentials
 
@@ -156,7 +157,8 @@ The MCP connector ([MCP.md](MCP.md)) runs its own OAuth 2.1 authorization server
 
 - An `mcp` token is bound to the `/mcp` resource and works nowhere else; every general API route rejects it.
 - Grants carry `mcp:read` and, if consented to since the write tools shipped, `mcp:write`. Any other scope, including the never-released `mcp:destroy`, is refused with `invalid_scope`. An older grant without `mcp:write` keeps working for reads, and the write tools tell the user to reconnect.
-- `mcp:write` covers recoverable changes only. No tool deletes data permanently or changes voiceprints, and assistants cannot write AI notes directly. The strongest deletion is moving a recording to the bin. Transcript corrections and speaker names made through MCP are labelled as AI edits in the app. `regenerate_notes` and `analyse_meeting` spend the user's own AI provider quota, and their tool descriptions say so.
+- In the library, `mcp:write` changes nothing permanently: no tool deletes library data or changes voiceprints, assistants cannot write AI notes directly, and the strongest deletion is moving a recording to the bin. Transcript corrections and speaker names made through MCP are labelled as AI edits in the app. `regenerate_notes` and `analyse_meeting` spend the user's own AI provider quota, and their tool descriptions say so.
+- `mcp:write` alone also authorises calendar writes on calendars Nojoin can write to (Proton today): creating, changing and cancelling events at the provider, where a cancelled event is removed, and answering invitations. They email other people only when the call asks (`notify_attendees`, off by default), except replies to an invitation, which go to the organiser unless the call turns `notify_organiser` off. Every calendar write past its argument checks is logged in the user's change log (`mcp_write_audit`, kept 12 months), which lists who was emailed and keeps a cancelled event's last state. Refusals reach the assistant as a JSON error object, and the call log keeps only the error code, never its details, which can hold addresses.
 - Authorization codes are single-use, PKCE-bound (S256 only) and expire after 60 seconds. Refresh tokens last 180 days and rotate on every use. Reusing a rotated refresh token revokes the whole grant.
 - Dynamic client registration is open, as the MCP specification requires, but rate limited. It accepts only public PKCE clients with HTTPS or loopback HTTP redirect URIs, and a registration grants nothing: every grant needs consent from a signed-in user on an origin-checked page.
 - Users list and revoke grants under **Settings > Integrations > Connected apps**. Revoking a grant stops it refreshing, and its current access token expires within the hour.
@@ -195,6 +197,17 @@ Each user can route their AI inference through their own **Claude** (Pro/Max) or
 
 For capture setup and troubleshooting, see [CAPTURE.md](CAPTURE.md).
 
+## Proton Calendar
+
+Proton offers no public calendar API, so a Proton connection uses Proton's private API, the one its own apps use, through the `nojoin-proton` helper (`proton/PROTOCOL.md`). The risks and what is kept are in [CALENDAR.md](CALENDAR.md#proton-calendar-unofficial); the user reads them before signing in.
+
+- Proton's terms (clause 2.10) allow automated access only while it "remains indistinguishable from the standard client behavior of human users", and let Proton block access. Nojoin sends Proton requests one at a time on the usual 15-minute cadence and identifies itself honestly (`x-pm-appversion: Other`); it never poses as a Proton client.
+- The user types their Proton password into Nojoin, which hands it to the helper and keeps it in no store or log. Between sign-in steps the partial session is held ten minutes in Redis, encrypted and bound to the user. Sign-in attempts are limited to five per user per ten minutes, since wrong passwords can lock a Proton account.
+- The helper runs once per operation with secrets on stdin only, an allowlisted environment and a timeout that kills its process group. It writes no files and logs only an error code.
+- Refresh tokens rotate on every use and are committed before anything else, under the account's advisory lock. A refused refresh, or a password changed at Proton, leaves the account **Reconnect required**.
+- Backups leave the Proton session and key passphrase out ([BACKUP_RESTORE.md](BACKUP_RESTORE.md)).
+- Disconnecting ends the session at Proton before Nojoin deletes everything it kept for it.
+
 ## Calendar Webhooks
 
 Google and Microsoft call the push endpoints (`/api/v1/calendar/webhooks/google` and `/api/v1/calendar/webhooks/microsoft`) without a user session. Each notification is authenticated by a per-subscription secret encrypted at rest (the Google channel token or the Microsoft `clientState`). The payload only signals a change: the handler queues an incremental sync that runs with the account's stored tokens. Unknown or mismatched notifications are ignored, and the response never reveals whether a subscription exists.
@@ -206,7 +219,7 @@ The server makes these outbound connections:
 - **Release metadata:** the GitHub Releases API (`api.github.com`), falling back to the GHCR tag list (`ghcr.io`) and the `docs/VERSION` file on `raw.githubusercontent.com`, for the update status in Settings and the admin update notice. Results are cached for ten minutes.
 - **Models:** the transcription, diarisation and embedding models, mostly from Hugging Face, when first-run setup or an administrator prepares them, or on first use.
 - **AI providers:** only when a non-local provider or a CLI OAuth subscription is in use. Local Ollama keeps inference on your own network.
-- **Calendar providers:** only when a user connects a Google or Microsoft account.
+- **Calendar providers:** only when a user connects a Google, Microsoft or Proton account. Proton's API is reached by the `nojoin-proton` helper in the `api` and `worker-io` images, at `mail.proton.me` only.
 - **Anonymous telemetry:** a daily heartbeat (a random install ID and the version), and optional diagnostics every six hours, sent from `worker-io` to `telemetry.nojoin.co.uk`. Neither contains meeting content, names, hostnames, URLs, credentials or model names, and the collector stores nothing derived from the connection. `NOJOIN_TELEMETRY_ENABLED=false` or a network block stops both without affecting anything else. [TELEMETRY.md](TELEMETRY.md) lists every field and opt-out.
 
 ## Vulnerability Scanning and Severity Policy

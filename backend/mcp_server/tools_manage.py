@@ -20,17 +20,12 @@ from backend.api.params import RowId
 from backend.core.security import MCP_WRITE_SCOPE
 from backend.mcp_server.access import recording_for
 from backend.mcp_server.auth import get_current_mcp_user
-from backend.mcp_server.server import (
-    _parse_iso_datetime,
-    _require_write_scope,
-    mcp_tool,
-)
+from backend.mcp_server.server import _require_write_scope, mcp_tool
 from backend.services.recording_access import Access
 
 logger = logging.getLogger(__name__)
 
 _ATTACH_CONTENT_CHAR_LIMIT = 200_000
-_CALENDAR_EVENTS_LIMIT_MAX = 100
 
 
 async def _transcript_revision(db: Any, recording_public_id: str) -> int:
@@ -644,72 +639,6 @@ async def unlock_utterance(
         "unlocked": True,
         "revision": revision,
     }
-
-
-@mcp_tool()
-async def list_calendar_events(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    limit: int = 25,
-) -> list[dict[str, Any]]:
-    """List the user's synced calendar events, most recent first.
-
-    Use the numeric event id with link_calendar_event to associate a
-    recording with its meeting; recordings are of meetings that already
-    happened, so the default ordering puts the likeliest candidates
-    first. At most `limit` events are returned; narrow with the date
-    filters rather than paging.
-
-    Args:
-        start_date: Only events starting on or after this ISO 8601
-            date/datetime.
-        end_date: Only events starting on or before this ISO 8601
-            date/datetime.
-        limit: Maximum events to return (1-100, default 25).
-    """
-    from backend.core.db import async_session_maker
-    from backend.models.calendar import (
-        CalendarConnection,
-        CalendarEvent,
-        CalendarSource,
-    )
-
-    user = get_current_mcp_user()
-    limit = max(1, min(int(limit), _CALENDAR_EVENTS_LIMIT_MAX))
-    start = _parse_iso_datetime(start_date, "start_date")
-    end = _parse_iso_datetime(end_date, "end_date")
-
-    statement = (
-        select(CalendarEvent)
-        .join(CalendarSource, CalendarSource.id == CalendarEvent.calendar_id)
-        .join(
-            CalendarConnection,
-            CalendarConnection.id == CalendarSource.connection_id,
-        )
-        .where(CalendarConnection.user_id == user.id)
-    )
-    if start is not None:
-        statement = statement.where(CalendarEvent.starts_at >= start)
-    if end is not None:
-        statement = statement.where(CalendarEvent.starts_at <= end)
-    statement = statement.order_by(CalendarEvent.starts_at.desc()).limit(limit)
-
-    async with async_session_maker() as db:
-        events = (await db.execute(statement)).scalars().all()
-
-    return [
-        {
-            "id": event.id,
-            "title": event.title,
-            "starts_at": event.starts_at.isoformat() if event.starts_at else None,
-            "ends_at": event.ends_at.isoformat() if event.ends_at else None,
-            "is_all_day": event.is_all_day,
-            "status": event.status,
-            "location": event.location_text,
-            "meeting_url": event.meeting_url,
-        }
-        for event in events
-    ]
 
 
 @mcp_tool(scope=MCP_WRITE_SCOPE)

@@ -175,7 +175,7 @@ Changing the transcription model downloads nothing by itself. **Settings > Trans
 
 After each task, workers release cached models and CUDA memory. The exception is while a recording is uploading live, when the live ASR model stays loaded between segments. Final processing releases any live model before it loads diarisation. What the process keeps after a release, the imported ML libraries and what a first inference leaves behind, goes only when `worker-gpu` restarts itself after an idle spell ([Idle Worker Restart](#idle-worker-restart)).
 
-`worker-io` runs Celery Beat (`-B`) for the periodic jobs, among them calendar sync, cleanup, search index backfill and telemetry. Beat records each job's last run in `data/celerybeat-schedule.json`, the `-s` path plus `.json`, and replaces the whole file after every task it sends, so the cadence survives restarts, even when Docker has to kill a busy `worker-io`. Give `-B` to one lane only, or every periodic job runs twice. Calendar live sync also needs the instance reachable from the internet over HTTPS at `WEB_APP_URL` ([CALENDAR.md](CALENDAR.md)).
+`worker-io` runs Celery Beat (`-B`) for the periodic jobs, among them calendar sync, cleanup, search index backfill and telemetry. Beat records each job's last run in `data/celerybeat-schedule.json`, the `-s` path plus `.json`, and replaces the whole file after every task it sends, so the cadence survives restarts, even when Docker has to kill a busy `worker-io`. Give `-B` to one lane only, or every periodic job runs twice. Calendar live sync also needs the instance reachable from the internet over HTTPS at `WEB_APP_URL` ([CALENDAR.md](CALENDAR.md)). Proton Calendar needs nothing in Compose: the `nojoin-proton` helper ships in the `api` and `worker-io` images, and with a Proton account connected both make outbound HTTPS requests to `mail.proton.me`.
 
 ### Forced Aligner Assets
 
@@ -283,7 +283,7 @@ Put each comment on a line of its own. Compose strips a comment that follows a v
 | Variable | Purpose |
 | --- | --- |
 | `FIRST_RUN_PASSWORD` | Password for the setup wizard at `/setup` on an uninitialised system. Setup refuses the example value from `.env.example`. Unused once setup is done. |
-| `DATA_ENCRYPTION_KEY` | Encrypts calendar OAuth client secrets, users' calendar tokens and subscription (CLI OAuth) credentials. See [DATA_ENCRYPTION_KEY Guidance](#data_encryption_key-guidance). |
+| `DATA_ENCRYPTION_KEY` | Encrypts calendar OAuth client secrets, users' calendar tokens, a Proton connection's session and key passphrase, and subscription (CLI OAuth) credentials. See [DATA_ENCRYPTION_KEY Guidance](#data_encryption_key-guidance). |
 | `POSTGRES_PASSWORD` | Database password. Set it before the first start: PostgreSQL keeps the password its data directory was initialised with. |
 | `REDIS_PASSWORD` | Redis password. |
 
