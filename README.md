@@ -19,7 +19,7 @@ Nojoin records your Meet, Teams and Zoom calls from the browser and transcribes 
 - **Notes from the model you choose:** an API provider, your existing Claude or ChatGPT subscription, or Ollama on the same machine for fully local processing.
 - **Meeting Edge** suggests questions, flags points you've missed and explains terms while the call is still running.
 - **Analytics measured from the audio:** talk-time share, turn-taking and overlapping speech, with an optional AI reading of decisions and unanswered questions.
-- Also: Google and Outlook calendar sync, search across every meeting and document, a chat for each meeting, tasks, and PDF, Word or plain-text export.
+- Also: Google, Outlook and Proton calendar sync (Proton through an unofficial route), calendar changes by your assistant, search across every meeting and document, a chat for each meeting, tasks, and PDF, Word or plain-text export.
 
 ## Quick Start
 

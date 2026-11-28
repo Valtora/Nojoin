@@ -1,6 +1,6 @@
 # Nojoin Calendar Guide
 
-Nojoin shows Google Calendar and Microsoft Outlook events on the dashboard. An Owner or Admin registers a Google or Microsoft OAuth app for the installation once; each user then connects their own calendar accounts. Users never enter client IDs, secrets or tenant IDs.
+Nojoin shows Google Calendar, Microsoft Outlook and Proton Calendar events on the dashboard. For Google and Outlook an Owner or Admin registers an OAuth app for the installation once; each user then connects their own calendar accounts, and never enters client IDs, secrets or tenant IDs. Proton needs no app registration: each user signs in with their own Proton account, through an unofficial route ([Proton Calendar](#proton-calendar-unofficial)).
 
 ## Before You Begin
 
@@ -105,6 +105,52 @@ An Owner or Admin turns it on per provider with the **Live sync** switch in **Se
 
 An account with live sync running shows a **Live sync** badge in **Settings > Integrations > Calendars**. If Nojoin cannot set up a subscription, it logs the provider's reason and carries on with the 15-minute sync. It tries again after 30 minutes when the provider could not be reached, had a server error or asked Nojoin to slow down, and after 6 hours when the provider refused the request.
 
+## Proton Calendar (Unofficial)
+
+> **Proton Calendar is connected through an unofficial route.** Proton offers no public calendar API. Nojoin talks to Proton's private API, the one Proton's own apps use, following the protocol that the open-source projects carbonate and proton-cal document. Before you connect, know that:
+>
+> - It can stop working without notice. Proton does not support this use and may change its API at any time.
+> - Proton's terms (clause 2.10) allow automated access only while the traffic "remains indistinguishable from the standard client behavior of human users", and let Proton block access at its discretion. Using this connection could lead Proton to restrict your account.
+> - To read and write your encrypted calendar, Nojoin keeps a Proton session and the key passphrase derived from your password. That passphrase opens every key on your Proton account, so it could also decrypt your Proton Mail and the rest of your account's encrypted data. Nojoin stores it encrypted with `DATA_ENCRYPTION_KEY` and uses it only for your calendars and, when you or an assistant ask, to send invitations. Anyone who obtains both the database and that key could read your mail.
+> - Nojoin stores the events it syncs (titles, descriptions, attendees) in its database without Proton's encryption, as it does for Google and Outlook calendars.
+> - Your password, mailbox password and two-factor code are never stored.
+> - Disconnecting ends the session at Proton and deletes everything Nojoin kept for it. Changing your Proton password also cuts Nojoin off until you reconnect.
+
+Every user can connect Proton; there is no setting to turn it on. The connection runs through the `nojoin-proton` helper that ships in the `api` and `worker-io` images, so there is nothing for an operator to install.
+
+### Connecting Proton
+
+1. Open **Settings > Integrations > Calendars** and select **Connect** beside **Proton Calendar**.
+2. Read the disclosure and tick **I understand**.
+3. Enter your Proton address or username and your password.
+4. If Proton wants to check that you are a person, select **Open Proton's check**, complete it in the new tab, then select **I've finished the check**.
+5. If your account has two-factor sign-in, enter the code from your authenticator app. An account whose only second factor is a security key cannot connect; add an authenticator app in Proton's settings first.
+6. If your account uses a separate mailbox password, enter it.
+
+Your default Proton calendar is then selected and synced. Subscribed and holiday calendars are listed read-only.
+
+### What Proton Sync Does
+
+Proton calendars sync on the same 15-minute cycle as the others: a full fetch over the 25-month range, then only what changed. Requests go one at a time to keep the load small. Recurring events are expanded in their own time zone, so a weekly 10:00 meeting stays at 10:00 when the clocks change. Proton's conference link becomes the event's meeting link.
+
+Assistants can create, change and cancel events on writable Proton calendars, make holds and answer invitations ([MCP.md](MCP.md#calendars)). A hold is marked with a hidden property Proton's apps keep, and shown in Proton with a `Hold: ` title prefix that Nojoin adds and removes.
+
+Limits: descriptions of at most 3,000 characters, at most 100 attendees, and recurrence rules Proton's apps accept (daily, weekly, monthly or yearly, at most 49 occurrences by count, ending no later than 2037). An invitation from outside Proton that you have not opened in Proton Mail is not in your calendar yet, so Nojoin cannot see it.
+
+### Reconnecting and Disconnecting
+
+An account shows **Reconnect required** when Proton refuses the stored session: after a Proton password change, a session ended in Proton's session list, or a restore from a backup, which never carries Proton sign-ins. Select **Reconnect** on the account and sign in again; its calendars, events and linked recordings are kept. **Disconnect** ends the session at Proton, then removes the account from Nojoin.
+
+### Proton Troubleshooting
+
+- **Proton asked Nojoin to slow down.** Proton rate-limited the account. The next sync tries again; nothing needs doing.
+- **Proton asked for a check Nojoin cannot show.** Sign in to Proton's web app from the same network once, then connect again.
+- **Proton did not accept that username or password** after several tries. Wait ten minutes: Nojoin limits attempts, since repeated wrong passwords can lock a Proton account.
+
+## Assistants and Your Calendars
+
+Assistants connected through the MCP connector read your selected calendars: event times in each event's own time zone, the organiser, attendees and their answers, holds and recurrence ([MCP.md](MCP.md#calendars)). Only selected calendars are searched. **Settings > Integrations > Changes made by assistants** lists every change an assistant made to your calendars, which app made it, who was emailed and the outcome, for 12 months.
+
 ## Troubleshooting
 
 ### Redirect Origin Is Wrong
@@ -161,3 +207,5 @@ The `worker-io` log records each failed attempt with the HTTP status and the pro
 - [DEPLOYMENT.md](DEPLOYMENT.md)
 - [USAGE.md](USAGE.md)
 - [ADMIN.md](ADMIN.md)
+- [MCP.md](MCP.md)
+- [SECURITY.md](SECURITY.md)

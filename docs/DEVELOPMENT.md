@@ -68,6 +68,7 @@ The `CI` workflow in [ci.yml](../.github/workflows/ci.yml) runs on pull requests
 | `Site build` (Astro build and the contrast gate) | `site/**`, `frontend/src/app/tokens.css`, `frontend/scripts/check-contrast.mjs` |
 | `Telemetry worker` (tsc and Vitest) | `telemetry/**` |
 | `Demo server` (pytest) | `demo/**` |
+| `Proton helper` (gofmt, go vet, go test, a static build and a `version` call) | `proton/**`, and the deployment paths |
 | `Docs validation`, `Alembic validation`, `Whitespace check`, `Held pin drift check` | always run |
 | `Dependency vulnerability scan` (Trivy) | always runs, never fails |
 
@@ -97,6 +98,29 @@ npm test
 ```
 
 The check names are `lint`, `format`, `whitespace`, `filesize`, `blindexcept`, `heldpins`, `typecheck`, `docs`, `alembic` and `tests`. The demo server's tests are in [demo/README.md](../demo/README.md#tests).
+
+### The Proton Helper
+
+Proton Calendar runs through `nojoin-proton`, a Go program in [proton/](../proton/) that the `api` and `worker-io` images build in a `proton-helper` stage and copy to `/usr/local/bin/nojoin-proton`. Python runs it once per operation with JSON on stdin and stdout; [proton/PROTOCOL.md](../proton/PROTOCOL.md) is the contract, and any change to a request or result changes that file in the same commit. `NOJOIN_PROTON_HELPER` points Nojoin at another binary and `NOJOIN_PROTON_API_BASE_URL` at another API, for tests only: the session's secrets go to whatever host it names.
+
+```bash
+cd proton
+gofmt -l .                 # must print nothing
+go vet ./...
+go test ./...              # the fake Proton server (internal/fakeproton) does real SRP and card checks
+go build -trimpath -o /tmp/nojoin-proton ./cmd/nojoin-proton
+go build -trimpath -o /tmp/nojoin-proton-fake ./cmd/nojoin-proton-fake
+printf '{"v":1,"op":"version"}' | /tmp/nojoin-proton
+```
+
+The backend's Python tests use a fake helper script and need no Go. The end-to-end test, [test_proton_end_to_end.py](../backend/tests/test_proton_end_to_end.py), runs the real helper against `nojoin-proton-fake` on loopback when both are named:
+
+```bash
+NOJOIN_TEST_PROTON_HELPER=/tmp/nojoin-proton NOJOIN_TEST_PROTON_FAKE=/tmp/nojoin-proton-fake \
+  pytest backend/tests/test_proton_end_to_end.py
+```
+
+`nojoin-proton-fake -listen 0.0.0.0:8080` also serves a throwaway stack: set `NOJOIN_PROTON_API_BASE_URL` on its `api` and `worker-io` to that address, and sign in with the made-up account it prints. Nothing in CI or a sandbox ever contacts Proton's servers.
 
 ### Branch Protection
 
@@ -576,6 +600,7 @@ Keep these controls intact when changing CI, the release workflow, the release s
 | pip | `/requirements` | `python-dependencies` |
 | npm | `/frontend` | `npm-production`, `npm-development` |
 | Docker | `/docker`, `/frontend` | `docker-base-images` |
+| Go modules | `/proton` | `go-dependencies`; go-proton-api's version tags are ignored, since they predate the API the helper needs and rank above its pinned master pseudo-version |
 
 Dependabot moves a pinned SHA or digest and its version comment in the same pull request. Never replace a pin with a floating tag to simplify an update. Each `ignore:` entry in the file holds a package below a version, with the reason beside it; remove the entry when its blocker clears.
 

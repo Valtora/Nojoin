@@ -2,7 +2,7 @@
 
 Nojoin has a built-in [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server, so AI assistants such as Claude can work with your meeting library on your own deployment: recordings, transcripts, meeting notes, attached documents, speakers, tags, tasks and your People library.
 
-Read tools (`mcp:read`) cover the whole library, including semantic search and measured speaking analytics. Write tools (`mcp:write`) make recoverable changes only. Nothing in the connector deletes permanently: the strongest deletion is moving a recording to the bin, and only the web app can empty the bin. Because the tools are general primitives, an assistant that is also connected to a CRM (HubSpot, Airtable, or a pasted list) can sync people in either direction without Nojoin needing a CRM integration of its own.
+Read tools (`mcp:read`) cover the whole library, including semantic search and measured speaking analytics, and the user's synced calendars. Write tools (`mcp:write`) change the library, where nothing is deleted permanently (the strongest deletion is moving a recording to the bin, and only the web app can empty the bin), and, on calendars Nojoin can write to, the user's real calendar: [Calendars](#calendars) says what that means, since a cancelled event is removed at the provider and a write can email other people when asked. Because the tools are general primitives, an assistant that is also connected to a CRM (HubSpot, Airtable, or a pasted list) can sync people in either direction without Nojoin needing a CRM integration of its own.
 
 ## Requirements
 
@@ -74,7 +74,7 @@ Some Codex Desktop builds (seen on 0.125.0-alpha.3) complete sign-in but never l
 
 ## Available Tools
 
-Thirty-two tools: thirteen read and nineteen write. Opposites share a row, so the table has fewer rows than tools. Every tool acts for the account that authorised the connection, with the same access it has in the web app: its own meetings, and the meetings shared with it ([USAGE.md](USAGE.md#sharing-a-meeting)). On a meeting shared to view, the read tools work and the write tools are refused. On one shared to edit, the tools that change the transcript, speakers, notes, documents or name work as well, and the actions only an owner may take are refused. Tags, People and tasks stay the account's own.
+Thirty-nine tools: sixteen read and twenty-three write. Opposites share a row, so the table has fewer rows than tools. Every tool acts for the account that authorised the connection, with the same access it has in the web app: its own meetings, and the meetings shared with it ([USAGE.md](USAGE.md#sharing-a-meeting)). On a meeting shared to view, the read tools work and the write tools are refused. On one shared to edit, the tools that change the transcript, speakers, notes, documents or name work as well, and the actions only an owner may take are refused. Tags, People and tasks stay the account's own.
 
 Two write tools spend your AI provider quota, which undoing their result does not refund: `regenerate_notes`, and the costlier `analyse_meeting`, whose description tells an assistant to ask before running it. On a meeting someone shared with you, both run on your own AI settings and quota, not the owner's.
 
@@ -91,7 +91,10 @@ Two write tools spend your AI provider quota, which undoing their result does no
 | `list_tags` | `mcp:read` | Your tags, usable as search terms. |
 | `list_people` | `mcp:read` | Your People library: names, contact details, notes and tags. |
 | `get_person` | `mcp:read` | One person, with the meetings they appear in, newest first. These are the meetings their **Person Details** counts: deleted meetings and any where all of their lines were moved to other speakers are left out. |
-| `list_calendar_events` | `mcp:read` | Your synced calendar events, for linking recordings to meetings. |
+| `list_calendars` | `mcp:read` | Your calendars from every connected account, with provider, selection, time zone, sync status, the synced range, and whether an assistant can write to each and why not. |
+| `list_calendar_events` | `mcp:read` | Events from your selected calendars that overlap a range, all-day events included, newest first or oldest first, paged with `skip`. Each has offset-aware times in its own zone, the organiser, attendees with their answers, holds, recurrence and a `revision`. The first eight fields are what the tool always returned. |
+| `get_calendar_event` | `mcp:read` | One event in full, with the recordings linked to it. `refresh` reads it from the provider first. |
+| `get_free_busy` | `mcp:read` | Busy and free time across your selected calendars over at most 62 days, with `complete` false when a calendar may be out of date. |
 | `list_tasks` | `mcp:read` | Your tasks. |
 | `rename_recording` | `mcp:write` | Rename a recording. The name counts as the user's, so a generated title never replaces it. |
 | `tag_recording` / `untag_recording` | `mcp:write` | Add a tag to a recording, creating the tag if needed, or remove one. |
@@ -104,12 +107,29 @@ Two write tools spend your AI provider quota, which undoing their result does no
 | `correct_utterance_text` / `correct_utterance_speaker` | `mcp:write` | Correct a line's text or speaker. The edit is logged with source `mcp`, locked like a web edit, and labelled `AI corrected text` or `AI corrected speaker` in the app. A speaker correction applies to every line by that speaker unless limited to one. |
 | `unlock_utterance` | `mcp:write` | Release a line's edit locks. The release is logged. |
 | `link_calendar_event` | `mcp:write` | Link a recording to a calendar event, or unlink it. |
+| `create_calendar_event` | `mcp:write` | Create an event, a recurring series or a hold on a writable calendar. Emails nobody unless `notify_attendees` is true. |
+| `update_calendar_event` | `mcp:write` | Change an event you organise, one occurrence or a whole series, or confirm a hold. Emails nobody unless `notify_attendees` is true. |
+| `cancel_calendar_event` | `mcp:write` | Remove an event you organise at the provider, or release a hold. Emails nobody unless `notify_attendees` is true. |
+| `respond_to_calendar_invitation` | `mcp:write` | Accept, decline or tentatively accept someone else's invitation. Emails the organiser unless `notify_organiser` is false. |
 | `create_task` / `update_task` | `mcp:write` | Create, edit, complete, archive or restore tasks, with links to recordings and tags. Deleting a task is web-app only. |
 | `import_people` | `mcp:write` | Create or update People records, matching existing people by exact name. Never touches voiceprints or removes data. |
 | `set_speaker_name` | `mcp:write` | Name a meeting's speaker, linking them to the person of that exact name if one exists. The name reaches the transcript and the AI notes, and the speaker panel marks it `AI named`. |
 | `append_meeting_notes` | `mcp:write` | Add a note after the end of a meeting's transcript, or, with `at_seconds`, at that moment of the recording, where the transcript shows it after the line spoken then. `at_seconds` is in seconds, as `get_transcript_utterances`' `start` gives them (or a `[MM:SS]` stamp from `get_transcript`, converted to seconds). A time past the end of a finished recording is refused. |
 
 A connection keeps the scopes it was granted. One authorised before `mcp:write` existed stays read-only, and its write tools reply with an instruction to reconnect. Remove and re-add the connector to grant the wider scope.
+
+## Calendars
+
+The calendar tools read Nojoin's synced copy of your selected calendars. Where `list_calendars` shows a calendar as `writable`, the write tools change it at the provider. Proton Calendar is the first writable provider ([CALENDAR.md](CALENDAR.md#proton-calendar-unofficial)); Google and Outlook calendars are read-only to assistants (`provider_read_only`). `mcp:write` alone authorises calendar writes, and each tool's description tells the assistant to ask you first.
+
+- **Who is told.** Create, update and cancel email nobody unless `notify_attendees` is true: attendees are only written onto the event. Answering an invitation is the exception: the reply is emailed to the organiser unless `notify_organiser` is false, and a Proton organiser sees the answer in their own calendar either way. Mail goes from your own address and sits in your Sent folder. Every result, dry runs included, carries `notifications`: who was emailed (or would be), who was not and why, and who sees the change without mail. If you later edit an event in your provider's own app, that app may offer to email its attendees.
+- **Holds.** `status` "tentative" makes a hold, a provisional booking that blocks time in `get_free_busy`. Proton shows it with a `Hold: ` title prefix. Nobody is invited to a hold until it is confirmed (`update_calendar_event` with `status` "confirmed" and `notify_attendees` true).
+- **Times.** A date-time with an offset is exact. One without an offset needs `time_zone`, an IANA name such as `Europe/London`, which is also the zone the event keeps, so a weekly 10:00 stays at 10:00 when the clocks change. A time that does not exist when the clocks go forward is refused, and one that happens twice when they go back needs its offset. All-day events take dates, with an exclusive end. In `list_calendar_events` a bare date is that whole day in your Nojoin time zone.
+- **Recurring events.** Each occurrence is its own event `id`. Writes to one need `scope`: "occurrence" or "series". A series cannot be moved to another date, and changing its time or rule resets occurrences edited on their own. Answering one occurrence of a recurring invitation is not supported yet.
+- **Safety.** `dry_run` checks everything and changes nothing. `idempotency_key` on a create makes a retry return the first event instead of creating another. Pass an event's `revision` as `expected_revision` to refuse a change if the event was edited since it was read.
+- **Errors.** A refusal is a JSON object, `{"error": {"code", "message", "retryable", "field", "details"}}`. The codes are `invalid_argument`, `invalid_time`, `ambiguous_time`, `scope_required`, `unsupported`, `not_found`, `not_writable` (with `details.reason`), `not_organiser`, `not_attendee`, `conflict`, `idempotency_conflict`, `write_scope_missing`, `auth_expired`, `rate_limited`, `busy`, `provider_unavailable` and `provider_rejected`.
+- **Change log.** Every calendar write past its argument checks is recorded under **Settings > Integrations > Changes made by assistants**: when, which app, what changed, who was emailed and the outcome. A cancelled event's last state is kept there so it can be recreated by hand. The log is kept 12 months and goes into backups.
+- **Proton invitations.** An invitation from outside Proton that you have never opened sits in your Proton mailbox, not your calendar. Nojoin does not read mail, so it cannot see or answer such an invitation.
 
 ### Keeping an External Copy in Sync
 

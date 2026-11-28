@@ -8,7 +8,8 @@
 - Tasks, with their tags and recording links.
 - People records and voiceprints.
 - User accounts with their password hashes, settings and the time each accepted the terms of use, and the shared notes structures.
-- Calendar sign-in credentials, each connected calendar's tokens, selected calendars, colours and cached events, and each meeting's link to its event.
+- Calendar sign-in credentials, each connected Google or Outlook calendar's tokens, selected calendars, colours and cached events, each meeting's link to its event, Nojoin's record of whom it invited to events, and the change log of what assistants changed in calendars.
+- Proton connections, with their calendars and events but not their sign-in: the Proton session and the key passphrase are never archived, because the passphrase could decrypt the user's Proton Mail. A restored Proton connection shows **Reconnect required**; reconnecting it keeps its calendars, events and links. A Proton connection already signed in on the target is kept as it is.
 - The system configuration, with keys, tokens and passwords redacted.
 - Optionally, each recording's audio.
 

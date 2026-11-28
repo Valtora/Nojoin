@@ -30,7 +30,7 @@ The dashboard holds:
 ### Calendar Surface
 
 - The agenda opens on today. Select a day in the month grid to show only that day, and **Whole month** to return to the month.
-- It lists synced calendar events with your unlinked Nojoin recordings, which are orange. Each calendar keeps its own colour.
+- It lists synced calendar events from Google, Outlook and Proton calendars with your unlinked Nojoin recordings, which are orange. Each calendar keeps its own colour. A hold an assistant made on a Proton calendar shows with a `Hold: ` title until it is confirmed.
 - In the current month the agenda starts at the next item, and **Show _n_ past events** adds the earlier ones. Past months show everything.
 - Click a timed event for its time, calendar, location, join link and linked recordings. A live event with a trusted meeting link shows **Join**.
 - Times use the timezone set in **Settings > Appearance**.
