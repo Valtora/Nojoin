@@ -447,3 +447,42 @@ async def _sync_microsoft_events(
     return ProviderEventSyncResult(
         events=events, deleted_remote_ids=deleted_remote_ids, cursor=sync_cursor
     )
+
+
+async def _fetch_google_event(
+    access_token: str, calendar_id: str, event_id: str
+) -> ProviderEventRecord | None:
+    """One event fresh from Google, or None when it is gone or cancelled."""
+    url = (
+        GOOGLE_EVENTS_URL_TEMPLATE.format(calendar_id=quote(calendar_id, safe=""))
+        + f"/{quote(event_id, safe='')}"
+    )
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.get(
+            url, headers={"Authorization": f"Bearer {access_token}"}
+        )
+    if response.status_code in {HTTPStatus.NOT_FOUND, HTTPStatus.GONE}:
+        return None
+    response.raise_for_status()
+    return _normalise_google_event(response.json())
+
+
+async def _fetch_microsoft_event(
+    access_token: str, event_id: str
+) -> ProviderEventRecord | None:
+    """One event fresh from Graph, or None when it is gone or cancelled."""
+    url = (
+        f"{MICROSOFT_GRAPH_URL}/me/events/{quote(event_id, safe='')}"
+        f"?{urlencode({'$select': MICROSOFT_EVENT_SELECT})}"
+    )
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Accept": "application/json",
+        "Prefer": 'outlook.timezone="UTC"',
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.get(url, headers=headers)
+    if response.status_code in {HTTPStatus.NOT_FOUND, HTTPStatus.GONE}:
+        return None
+    response.raise_for_status()
+    return _normalise_microsoft_event(response.json())

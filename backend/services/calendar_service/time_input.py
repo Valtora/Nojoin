@@ -26,7 +26,7 @@ from .tool_errors import CalendarToolError
 _DATE_ONLY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
-def _is_date_only(value: str) -> bool:
+def is_date_only(value: str) -> bool:
     return bool(_DATE_ONLY.match(value.strip()))
 
 
@@ -67,7 +67,7 @@ def resolve_filter_bound(
     """
     if value is None or not value.strip():
         return None
-    if _is_date_only(value):
+    if is_date_only(value):
         day = _parse_date(value, field)
         return local_midnight_utc(day + timedelta(days=1) if is_end else day, user_zone)
     parsed = _parse_datetime(value, field)
@@ -161,7 +161,7 @@ def parse_moment(
     value: str, *, field: str, time_zone: str | None, user_zone: str
 ) -> Moment:
     """A date-time a write or free/busy call names, under the write rules."""
-    if _is_date_only(value):
+    if is_date_only(value):
         raise CalendarToolError(
             "invalid_time",
             f"{field} is a date; pass a date-time, or set all_day for an "
@@ -187,7 +187,7 @@ def parse_moment(
 
 def parse_all_day(value: str, *, field: str) -> date:
     """A date an all-day write names; a date-time is refused."""
-    if not _is_date_only(value):
+    if not is_date_only(value):
         raise CalendarToolError(
             "invalid_time",
             f"{field} must be a date such as 2026-12-24 for an all-day event.",

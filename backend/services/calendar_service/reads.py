@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from backend.models.calendar import CalendarConnection, CalendarEvent, CalendarSource
+from backend.models.recording import Recording
 from backend.models.user import User
 
 from .event_view import CalendarState, calendar_state, series_calendar_id, series_id
@@ -147,3 +148,56 @@ async def list_events(
         )
     events = (await db.execute(statement.offset(skip).limit(limit))).scalars().all()
     return [(event, by_id[event.calendar_id]) for event in events]
+
+
+async def event_counts(db: AsyncSession, calendar_ids: list[int]) -> dict[int, int]:
+    if not calendar_ids:
+        return {}
+    rows = await db.execute(
+        select(CalendarEvent.calendar_id, sa.func.count())
+        .where(CalendarEvent.calendar_id.in_(calendar_ids))
+        .where(CalendarEvent.status != "cancelled")
+        .group_by(CalendarEvent.calendar_id)
+    )
+    return {int(calendar_id): int(count) for calendar_id, count in rows.all()}
+
+
+async def user_event(
+    db: AsyncSession, user: User, event_id: int
+) -> tuple[CalendarEvent, CalendarState]:
+    """One of the user's events with its calendar, or ``not_found``."""
+    row = (
+        await db.execute(
+            select(CalendarEvent, CalendarSource, CalendarConnection)
+            .join(CalendarSource, CalendarSource.id == CalendarEvent.calendar_id)
+            .join(
+                CalendarConnection,
+                CalendarConnection.id == CalendarSource.connection_id,
+            )
+            .where(CalendarEvent.id == event_id)
+            .where(CalendarConnection.user_id == user.id)
+        )
+    ).one_or_none()
+    if row is None:
+        raise CalendarToolError(
+            "not_found",
+            f"No calendar event {event_id} among the user's events. List them "
+            "again with list_calendar_events.",
+            field="event_id",
+        )
+    event, source, connection = row
+    return event, calendar_state(source, connection)
+
+
+async def linked_recordings(
+    db: AsyncSession, user: User, event_id: int
+) -> list[dict[str, Any]]:
+    """The user's recordings linked to an event, outside the bin."""
+    rows = await db.execute(
+        select(Recording.public_id, Recording.name)
+        .where(Recording.calendar_event_id == event_id)
+        .where(Recording.user_id == user.id)
+        .where(Recording.is_deleted.is_(False))
+        .order_by(Recording.id)
+    )
+    return [{"id": public_id, "name": name} for public_id, name in rows.all()]
