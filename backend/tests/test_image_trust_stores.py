@@ -15,7 +15,14 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DOCKERFILES = ("docker/Dockerfile.api", "docker/Dockerfile.worker")
+# Every stage each image builds, by name. Naming them, rather than counting,
+# means a stage the split below failed to see, or a new stage nobody checked,
+# fails here instead of passing unexamined.
+STAGES = {
+    "docker/Dockerfile.api": ["builder", "proton-helper", "runtime"],
+    "docker/Dockerfile.worker": ["builder", "runtime"],
+}
+DOCKERFILES = tuple(STAGES)
 
 
 def _stages(dockerfile: str) -> list[str]:
@@ -28,9 +35,9 @@ def _stages(dockerfile: str) -> list[str]:
 @pytest.mark.parametrize("dockerfile", DOCKERFILES)
 def test_every_stage_upgrades_os_packages_before_installing(dockerfile: str) -> None:
     stages = _stages(dockerfile)
-    assert len(stages) == 2
-    for stage in stages:
-        name = stage.split("\n", 1)[0].split()[-1]
+    names = [stage.split("\n", 1)[0].split()[-1] for stage in stages]
+    assert names == STAGES[dockerfile]
+    for name, stage in zip(names, stages):
         upgrade = stage.find("apt-get upgrade -y")
         install = stage.find("apt-get install")
         assert upgrade != -1, f"{dockerfile} {name} stage never runs apt-get upgrade"
@@ -51,3 +58,12 @@ def test_api_installs_its_requirements_with_the_hash_pinned_pip() -> None:
     entries = [line for line in lines.splitlines() if not line.startswith("#")]
     assert entries[0].startswith("pip==")
     assert any("--hash=sha256:" in line for line in entries)
+
+
+def test_the_proton_helper_stage_upgrades_in_worker_io_too() -> None:
+    """worker-io builds the same Go stage as the API image, from its own text."""
+    stages = {
+        stage.split("\n", 1)[0].split()[-1]: stage
+        for stage in _stages("docker/Dockerfile.worker-io")
+    }
+    assert "apt-get upgrade -y" in stages["proton-helper"]
