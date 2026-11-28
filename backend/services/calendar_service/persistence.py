@@ -37,6 +37,37 @@ from .models_dto import (
     TokenBundle,
 )
 from .text_utils import _utc_now
+from .zones import event_range
+
+# The fields copied from a provider's record onto the stored event as they are.
+_COPIED_EVENT_FIELDS = (
+    "title",
+    "status",
+    "is_all_day",
+    "starts_at",
+    "ends_at",
+    "start_date",
+    "end_date",
+    "location_text",
+    "description",
+    "attendees",
+    "meeting_url",
+    "source_url",
+    "external_updated_at",
+    "start_time_zone",
+    "end_time_zone",
+    "show_as",
+    "organiser",
+    "is_organiser",
+    "my_response",
+    "series_key",
+    "original_start",
+    "original_start_date",
+    "occurrence_type",
+    "recurrence_rule",
+    "provider_revision",
+    "provider_data",
+)
 
 
 async def _upsert_connection(
@@ -132,27 +163,29 @@ async def _refresh_connection_calendars(
 def _apply_provider_event_to_model(
     calendar_event: CalendarEvent,
     provider_event: ProviderEventRecord,
+    *,
+    range_zone: str | None = None,
 ) -> CalendarEvent:
+    """Copy a provider's record onto the stored event.
+
+    ``range_zone`` is the zone an all-day event's dates are midnights in: the
+    calendar's, else the user's. The model derives a timed event's range from
+    its times whatever is passed.
+    """
     calendar_event.provider_event_id = provider_event.remote_id
-    calendar_event.title = provider_event.title
-    calendar_event.status = provider_event.status
-    calendar_event.is_all_day = provider_event.is_all_day
-    calendar_event.starts_at = provider_event.starts_at
-    calendar_event.ends_at = provider_event.ends_at
-    calendar_event.start_date = provider_event.start_date
-    calendar_event.end_date = provider_event.end_date
-    calendar_event.location_text = provider_event.location_text
-    calendar_event.description = provider_event.description
-    calendar_event.attendees = provider_event.attendees
-    calendar_event.meeting_url = provider_event.meeting_url
-    calendar_event.source_url = provider_event.source_url
-    calendar_event.external_updated_at = provider_event.external_updated_at
+    for field_name in _COPIED_EVENT_FIELDS:
+        setattr(calendar_event, field_name, getattr(provider_event, field_name))
+    span = event_range(provider_event, range_zone)
+    if span is not None:
+        calendar_event.range_start, calendar_event.range_end = span
     return calendar_event
 
 
 def _build_calendar_event_model(
     calendar_id: int,
     provider_event: ProviderEventRecord,
+    *,
+    range_zone: str | None = None,
 ) -> CalendarEvent:
     return _apply_provider_event_to_model(
         CalendarEvent(
@@ -161,6 +194,7 @@ def _build_calendar_event_model(
             title=provider_event.title,
         ),
         provider_event,
+        range_zone=range_zone,
     )
 
 
@@ -169,13 +203,23 @@ def _upsert_calendar_events(
     calendar_id: int,
     provider_events: list[ProviderEventRecord],
     existing_by_remote_id: dict[str, CalendarEvent],
+    *,
+    range_zone: str | None = None,
 ) -> None:
     for provider_event in provider_events:
         existing_event = existing_by_remote_id.get(provider_event.remote_id)
         if existing_event is None:
-            db.add(_build_calendar_event_model(calendar_id, provider_event))
+            db.add(
+                _build_calendar_event_model(
+                    calendar_id, provider_event, range_zone=range_zone
+                )
+            )
             continue
-        db.add(_apply_provider_event_to_model(existing_event, provider_event))
+        db.add(
+            _apply_provider_event_to_model(
+                existing_event, provider_event, range_zone=range_zone
+            )
+        )
 
 
 def _calendar_event_ended_before(
@@ -218,6 +262,8 @@ async def _reconcile_calendar_events(
     calendar_id: int,
     provider_events: list[ProviderEventRecord],
     window_start: datetime,
+    *,
+    range_zone: str | None = None,
 ) -> None:
     """Bring a calendar's stored events in line with a full provider listing.
 
@@ -275,6 +321,7 @@ async def _reconcile_calendar_events(
             existing_event.provider_event_id: existing_event
             for existing_event in existing_events
         },
+        range_zone=range_zone,
     )
 
 
@@ -283,6 +330,8 @@ async def _apply_incremental_calendar_events(
     calendar_id: int,
     provider_events: list[ProviderEventRecord],
     deleted_remote_ids: list[str],
+    *,
+    range_zone: str | None = None,
 ) -> None:
     # Both id lists come from the provider rather than from a caller, and the
     # sync window spans 25 months, so neither has a bound this code controls.
@@ -325,6 +374,7 @@ async def _apply_incremental_calendar_events(
             existing_event.provider_event_id: existing_event
             for existing_event in existing_events
         },
+        range_zone=range_zone,
     )
 
 

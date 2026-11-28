@@ -29,6 +29,7 @@ from backend.models.calendar import (
     CalendarSyncStatus,
 )
 from backend.models.user import User
+from backend.utils.timezones import get_user_timezone_name, normalise_timezone_name
 
 from .config import (
     _prune_unreadable_connections,
@@ -37,7 +38,7 @@ from .config import (
     get_provider_runtime_config,
     list_provider_statuses,
 )
-from .constants import PROVIDER_DISPLAY_NAMES
+from .constants import OAUTH_PROVIDERS, PROVIDER_DISPLAY_NAMES
 from .models_dto import (
     IncrementalSyncResetRequired,
     ProviderCalendarRecord,
@@ -67,6 +68,7 @@ from .persistence import (
     _upsert_connection,
 )
 from .provider_errors import CalendarConnectFailed, _describe_failure_for_log
+from .provider_fields import mark_own_attendee
 from .providers import (
     _get_microsoft_delta_cursor,
     _list_google_calendars,
@@ -405,6 +407,16 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
         await db.commit()
         return
 
+    if connection.provider not in OAUTH_PROVIDERS:
+        connection.sync_status = CalendarSyncStatus.ERROR.value
+        connection.sync_error = (
+            f"{PROVIDER_DISPLAY_NAMES.get(connection.provider, connection.provider)} "
+            "calendars cannot sync in this version of Nojoin"
+        )
+        db.add(connection)
+        await db.commit()
+        return
+
     runtime_config = await get_provider_runtime_config(db, connection.provider)
     if not runtime_config.configured:
         connection.sync_status = CalendarSyncStatus.ERROR.value
@@ -414,6 +426,9 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
         db.add(connection)
         await db.commit()
         return
+
+    owner = await db.get(User, connection.user_id)
+    user_zone = get_user_timezone_name(owner.settings if owner else None)
 
     started_at = _utc_now()
     connection.sync_status = CalendarSyncStatus.SYNCING.value
@@ -440,6 +455,8 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
         window_start, window_end = _build_sync_window()
 
         for calendar in selected_calendars:
+            # All-day events span midnight to midnight in this zone.
+            range_zone = normalise_timezone_name(calendar.time_zone) or user_zone
             use_incremental_sync = _can_use_incremental_sync(
                 calendar,
                 window_start,
@@ -472,10 +489,15 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
                             calendar.id,
                             sync_result.events,
                             sync_result.deleted_remote_ids,
+                            range_zone=range_zone,
                         )
                     else:
                         await _reconcile_calendar_events(
-                            db, calendar.id, sync_result.events, window_start
+                            db,
+                            calendar.id,
+                            sync_result.events,
+                            window_start,
+                            range_zone=range_zone,
                         )
                 except IncrementalSyncResetRequired:
                     sync_result = await _sync_google_events(
@@ -486,7 +508,11 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
                         sync_cursor=None,
                     )
                     await _reconcile_calendar_events(
-                        db, calendar.id, sync_result.events, window_start
+                        db,
+                        calendar.id,
+                        sync_result.events,
+                        window_start,
+                        range_zone=range_zone,
                     )
             else:
                 if use_incremental_sync:
@@ -501,8 +527,9 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
                         await _apply_incremental_calendar_events(
                             db,
                             calendar.id,
-                            sync_result.events,
+                            mark_own_attendee(sync_result.events, connection.email),
                             sync_result.deleted_remote_ids,
+                            range_zone=range_zone,
                         )
                     except IncrementalSyncResetRequired:
                         provider_events = await _list_microsoft_events(
@@ -518,12 +545,16 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
                             window_end,
                         )
                         sync_result = ProviderEventSyncResult(
-                            events=provider_events,
+                            events=mark_own_attendee(provider_events, connection.email),
                             deleted_remote_ids=[],
                             cursor=delta_cursor,
                         )
                         await _reconcile_calendar_events(
-                            db, calendar.id, sync_result.events, window_start
+                            db,
+                            calendar.id,
+                            sync_result.events,
+                            window_start,
+                            range_zone=range_zone,
                         )
                 else:
                     provider_events = await _list_microsoft_events(
@@ -539,12 +570,16 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
                         window_end,
                     )
                     sync_result = ProviderEventSyncResult(
-                        events=provider_events,
+                        events=mark_own_attendee(provider_events, connection.email),
                         deleted_remote_ids=[],
                         cursor=delta_cursor,
                     )
                     await _reconcile_calendar_events(
-                        db, calendar.id, sync_result.events, window_start
+                        db,
+                        calendar.id,
+                        sync_result.events,
+                        window_start,
+                        range_zone=range_zone,
                     )
 
             calendar.sync_cursor = sync_result.cursor

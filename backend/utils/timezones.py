@@ -100,3 +100,16 @@ def utc_naive_to_timezone(
 
 def today_in_timezone(timezone_name: str) -> date:
     return datetime.now(get_timezone(timezone_name)).date()
+
+
+def local_midnight_utc(day: date, timezone_name: str | None) -> datetime:
+    """Midnight at the start of ``day`` in a zone, as naive UTC.
+
+    A day that starts inside a daylight-saving gap (a few zones move their
+    clocks at midnight) starts at the first moment that exists, which is what
+    zoneinfo gives for the earlier fold.
+    """
+    local = datetime.combine(
+        day, datetime.min.time(), tzinfo=get_timezone(timezone_name)
+    )
+    return local.astimezone(UTC).replace(tzinfo=None)

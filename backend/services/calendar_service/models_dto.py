@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
+from typing import Any
 
 
 @dataclass
@@ -66,8 +67,25 @@ class ProviderEventRecord:
     location_text: str | None = None
     meeting_url: str | None = None
     description: str | None = None
+    # [{name, email, response, role, is_self}]; response is accepted,
+    # declined, tentative or needs_action, role required, optional or
+    # information.
     attendees: list | None = None
     external_updated_at: datetime | None = None
+    start_time_zone: str | None = None
+    end_time_zone: str | None = None
+    show_as: str = "busy"
+    # {name, email, is_self}
+    organiser: dict[str, Any] | None = None
+    is_organiser: bool | None = None
+    my_response: str | None = None
+    series_key: str | None = None
+    original_start: datetime | None = None
+    original_start_date: date | None = None
+    occurrence_type: str = "single"
+    recurrence_rule: str | None = None
+    provider_revision: str | None = None
+    provider_data: dict[str, Any] | None = None
 
 
 @dataclass

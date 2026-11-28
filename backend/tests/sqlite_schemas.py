@@ -580,6 +580,7 @@ CREATE TABLE calendar_connections (
     last_sync_started_at DATETIME,
     last_sync_completed_at DATETIME,
     last_synced_at DATETIME,
+    provider_secrets_encrypted TEXT,
     UNIQUE(user_id, provider, provider_account_id)
 )
 """
@@ -664,6 +665,21 @@ CREATE TABLE calendar_events (
     meeting_url VARCHAR(2048),
     source_url VARCHAR(2048),
     external_updated_at DATETIME,
+    start_time_zone VARCHAR(64),
+    end_time_zone VARCHAR(64),
+    range_start DATETIME,
+    range_end DATETIME,
+    show_as VARCHAR(16) NOT NULL DEFAULT 'busy',
+    organiser JSON,
+    is_organiser BOOLEAN,
+    my_response VARCHAR(16),
+    series_key VARCHAR(512),
+    original_start DATETIME,
+    original_start_date DATE,
+    occurrence_type VARCHAR(16) NOT NULL DEFAULT 'single',
+    recurrence_rule TEXT,
+    provider_revision VARCHAR(255),
+    provider_data JSON,
     UNIQUE(calendar_id, provider_event_id)
 )
 """

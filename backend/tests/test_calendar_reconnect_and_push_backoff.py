@@ -29,6 +29,7 @@ from backend.tests.sqlite_schemas import (
     CALENDAR_PROVIDER_CONFIGS_SCHEMA,
     CALENDAR_PUSH_CHANNELS_SCHEMA,
     CALENDAR_SOURCES_SCHEMA,
+    USERS_SCHEMA,
 )
 
 SEEDED_AT = datetime(2026, 9, 8, 15, 0)
@@ -71,6 +72,7 @@ async def engine(tmp_path):
 
     async with engine.begin() as connection:
         for schema in (
+            USERS_SCHEMA,
             CALENDAR_CONNECTIONS_SCHEMA,
             CALENDAR_SOURCES_SCHEMA,
             CALENDAR_PROVIDER_CONFIGS_SCHEMA,
