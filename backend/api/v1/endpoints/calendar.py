@@ -6,12 +6,15 @@ from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
 from fastapi.responses import PlainTextResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+from sqlmodel import select
 
 from backend.api.deps import get_current_admin_user, get_current_user, get_db
 from backend.api.params import PageOffset, RowId
 from backend.models.calendar import (
     CalendarActionResponse,
     CalendarAuthorisationStart,
+    CalendarConnection,
     CalendarConnectionRead,
     CalendarDashboardSummaryRead,
     CalendarOverviewRead,
@@ -150,7 +153,22 @@ async def _proton_step(
 ) -> ProtonConnectStepRead:
     connection = None
     if step.connection is not None:
-        connection = await _serialise_connection_with_push(db, step.connection)
+        # Reloaded with its calendars, as the OAuth callback's overview is: the
+        # instance the connect flow holds has never loaded them, and a lazy
+        # load cannot run on an async session.
+        loaded = (
+            (
+                await db.execute(
+                    select(CalendarConnection)
+                    .options(selectinload(CalendarConnection.calendars))
+                    .where(CalendarConnection.id == step.connection.id)
+                    .execution_options(populate_existing=True)
+                )
+            )
+            .scalars()
+            .one()
+        )
+        connection = await _serialise_connection_with_push(db, loaded)
     return ProtonConnectStepRead(
         step=step.step,
         flow_id=step.flow_id,
