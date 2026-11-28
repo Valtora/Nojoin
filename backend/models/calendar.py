@@ -366,6 +366,50 @@ def _fill_event_range_before_write(_mapper: Any, _connection: Any, target: Any) 
     fill_event_range(target)
 
 
+class CalendarAttendeeInvite(BaseDBModel, table=True):
+    """Whether Nojoin has invited one attendee to one event.
+
+    Nojoin writes a row for every attendee of an event it creates or adds
+    people to, with ``invited_at`` empty until an invitation is sent, and
+    ``cancelled_at`` once a cancellation is. The provider has no such field
+    and sync replaces event rows, so this lives on its own, keyed by the
+    event's iCalendar UID. An event with no rows was not created through
+    Nojoin, and its attendees are taken to have been invited by whoever
+    created it.
+    """
+
+    __tablename__ = "calendar_attendee_invites"
+    __table_args__ = (
+        UniqueConstraint(
+            "calendar_source_id",
+            "event_uid",
+            "email",
+            name="uq_calendar_attendee_invite_source_uid_email",
+        ),
+    )
+
+    calendar_source_id: int = Field(
+        sa_column=Column(
+            BigInteger,
+            ForeignKey("calendar_sources.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    event_uid: str = Field(sa_column=Column(String(512), nullable=False))
+    # Lower-cased.
+    email: str = Field(sa_column=Column(String(320), nullable=False))
+    invited_at: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime, nullable=True)
+    )
+    invited_sequence: Optional[int] = Field(
+        default=None, sa_column=Column(sa.Integer, nullable=True)
+    )
+    cancelled_at: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime, nullable=True)
+    )
+
+
 class CalendarPushChannel(BaseDBModel, table=True):
     """A provider push/webhook subscription for one selected calendar.
 

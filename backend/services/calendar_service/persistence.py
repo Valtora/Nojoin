@@ -257,13 +257,14 @@ async def _linked_calendar_event_ids(
     return linked_ids
 
 
-async def _reconcile_calendar_events(
+async def _reconcile_calendar_events(  # noqa: PLR0913 - keyword-only sync context
     db: AsyncSession,
     calendar_id: int,
     provider_events: list[ProviderEventRecord],
     window_start: datetime,
     *,
     range_zone: str | None = None,
+    fetch_started_at: datetime | None = None,
 ) -> None:
     """Bring a calendar's stored events in line with a full provider listing.
 
@@ -277,6 +278,10 @@ async def _reconcile_calendar_events(
     an event is not the provider deleting it, and the link should outlive the
     window. Inside the window a missing event was deleted upstream, and goes as
     it would on the incremental path.
+
+    An event written after ``fetch_started_at`` is kept too: a write that
+    landed while the listing was being fetched is missing from it, not
+    deleted, and the next sync settles it.
     """
     existing_events = list(
         (
@@ -294,6 +299,11 @@ async def _reconcile_calendar_events(
         existing_event
         for existing_event in existing_events
         if existing_event.provider_event_id not in returned_remote_ids
+        and not (
+            fetch_started_at is not None
+            and existing_event.updated_at is not None
+            and existing_event.updated_at >= fetch_started_at
+        )
     ]
     kept_event_ids = await _linked_calendar_event_ids(
         db,

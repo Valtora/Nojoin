@@ -498,6 +498,7 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
                             sync_result.events,
                             window_start,
                             range_zone=range_zone,
+                            fetch_started_at=started_at,
                         )
                 except IncrementalSyncResetRequired:
                     sync_result = await _sync_google_events(
@@ -513,6 +514,7 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
                         sync_result.events,
                         window_start,
                         range_zone=range_zone,
+                        fetch_started_at=started_at,
                     )
             else:
                 if use_incremental_sync:
@@ -555,6 +557,7 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
                             sync_result.events,
                             window_start,
                             range_zone=range_zone,
+                            fetch_started_at=started_at,
                         )
                 else:
                     provider_events = await _list_microsoft_events(
@@ -580,6 +583,7 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
                         sync_result.events,
                         window_start,
                         range_zone=range_zone,
+                        fetch_started_at=started_at,
                     )
 
             calendar.sync_cursor = sync_result.cursor

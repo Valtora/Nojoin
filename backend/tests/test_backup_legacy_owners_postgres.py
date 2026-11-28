@@ -64,6 +64,22 @@ COLUMNS_ADDED_AFTER_BEFORE = {
     ("recordings", "first_processed_at"): "TIMESTAMP",
     ("recordings", "title_user_edited"): "BOOLEAN NOT NULL DEFAULT false",
     ("users", "legal_accepted_at"): "TIMESTAMP",
+    ("calendar_connections", "provider_secrets_encrypted"): "TEXT",
+    ("calendar_events", "start_time_zone"): "VARCHAR(64)",
+    ("calendar_events", "end_time_zone"): "VARCHAR(64)",
+    ("calendar_events", "range_start"): "TIMESTAMP",
+    ("calendar_events", "range_end"): "TIMESTAMP",
+    ("calendar_events", "show_as"): "VARCHAR(16) NOT NULL DEFAULT 'busy'",
+    ("calendar_events", "organiser"): "JSON",
+    ("calendar_events", "is_organiser"): "BOOLEAN",
+    ("calendar_events", "my_response"): "VARCHAR(16)",
+    ("calendar_events", "series_key"): "VARCHAR(512)",
+    ("calendar_events", "original_start"): "TIMESTAMP",
+    ("calendar_events", "original_start_date"): "DATE",
+    ("calendar_events", "occurrence_type"): "VARCHAR(16) NOT NULL DEFAULT 'single'",
+    ("calendar_events", "recurrence_rule"): "TEXT",
+    ("calendar_events", "provider_revision"): "VARCHAR(255)",
+    ("calendar_events", "provider_data"): "JSON",
 }
 # Backed-up tables a later revision creates. An archive made at BEFORE has no
 # member for them, so the old archive is made without them.
@@ -71,6 +87,8 @@ TABLES_ADDED_AFTER_BEFORE = {
     "user_identities",
     "recording_shares",
     "recording_restore_requests",
+    "calendar_attendee_invites",
+    "mcp_write_audit",
 }
 
 

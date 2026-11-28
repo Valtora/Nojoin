@@ -19,7 +19,6 @@ from backend.models.calendar import (
 from backend.utils.timezones import normalise_timezone_name
 
 from .config import get_provider_runtime_config
-from .constants import OAUTH_PROVIDERS
 from .event_view import CalendarState
 from .models_dto import (
     CalendarReauthorisationRequired,
@@ -113,13 +112,11 @@ async def refresh_event(
     db: AsyncSession, event: CalendarEvent, state: CalendarState, *, user_zone: str
 ) -> CalendarEvent:
     """Read one event fresh from its provider and update Nojoin's copy."""
-    if state.connection.provider not in OAUTH_PROVIDERS:
-        raise CalendarToolError(
-            "unsupported",
-            "Nojoin cannot read this provider's events fresh yet.",
-            details={"hint": "Call get_calendar_event without refresh."},
-        )
-    record = await fetch_oauth_event(
-        db, state.connection, state.source, event.provider_event_id
+    from .write_backend import write_backend_for
+    from .write_steps import event_ref, provider_context
+
+    backend = write_backend_for(state.connection.provider)
+    record = await backend.get_event(
+        provider_context(db, state, user_zone), event_ref(event, state)
     )
     return await store_refreshed_event(db, event, record, state, user_zone=user_zone)

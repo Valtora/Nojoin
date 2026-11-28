@@ -73,7 +73,9 @@ def provider_capabilities(
     connection: CalendarConnection, source: CalendarSource
 ) -> WriteCapabilities:
     """What the provider's write backend supports for this calendar."""
-    return READ_ONLY
+    from .write_backend import write_backend_for
+
+    return write_backend_for(connection.provider).capabilities(connection, source)
 
 
 def calendar_capabilities(

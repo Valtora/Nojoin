@@ -1,6 +1,8 @@
 """MCP tools for the user's calendars.
 
-Read tools need ``mcp:read``. Each refusal is a ToolError whose text is one
+Read tools need ``mcp:read``; the four write tools need ``mcp:write``, and
+change the user's real calendar where list_calendars shows it writable. The
+writes run in ``backend/services/calendar_service/writes.py``. Each refusal is a ToolError whose text is one
 JSON object, ``{"error": {"code", "message", "retryable", "field",
 "details"}}`` (``backend/services/calendar_service/tool_errors.py``), so an
 agent can act on the code whatever its client does with errors. The call log
@@ -11,12 +13,19 @@ import functools
 from collections.abc import Awaitable, Callable
 from typing import Annotated, Any, Literal, Optional, TypeVar
 
-from annotated_types import Ge, Le, MaxLen
+from annotated_types import Ge, Le, MaxLen, MinLen
 from mcp.server.mcpserver.exceptions import ToolError
+from pydantic import BaseModel
 
 from backend.api.params import PageOffset, RowId
-from backend.mcp_server.auth import get_current_mcp_user
+from backend.core.security import MCP_WRITE_SCOPE
+from backend.mcp_server.auth import (
+    current_mcp_grant_id,
+    get_current_mcp_scopes,
+    get_current_mcp_user,
+)
 from backend.mcp_server.server import mcp_tool
+from backend.services.calendar_service import writes
 from backend.services.calendar_service.event_refresh import refresh_event
 from backend.services.calendar_service.event_view import (
     CalendarState,
@@ -35,6 +44,17 @@ from backend.services.calendar_service.reads import (
 from backend.services.calendar_service.time_input import resolve_filter_bound
 from backend.services.calendar_service.tool_errors import CalendarToolError
 from backend.services.calendar_service.tool_failures import calendar_tool_error
+from backend.services.calendar_service.write_audit import (
+    Actor,
+    client_name_for_grant,
+)
+from backend.services.calendar_service.write_backend import AttendeeDraft
+from backend.services.calendar_service.write_inputs import (
+    CancelRequest,
+    CreateRequest,
+    RespondRequest,
+    UpdateRequest,
+)
 from backend.utils.timezones import get_user_timezone_name, utc_naive_to_aware
 
 T = TypeVar("T")
@@ -320,3 +340,302 @@ async def get_free_busy(  # noqa: PLR0913 - one parameter per option
             include_holds=include_holds,
             min_free_minutes=min_free_minutes,
         )
+
+
+class AttendeeInput(BaseModel):
+    email: Annotated[str, MaxLen(254)]
+    name: Optional[Annotated[str, MaxLen(255)]] = None
+    optional: bool = False
+
+
+def _attendees(entries: Optional[list[AttendeeInput]]) -> list[AttendeeDraft]:
+    return [
+        AttendeeDraft(email=entry.email, name=entry.name, optional=entry.optional)
+        for entry in entries or []
+    ]
+
+
+def _require_write_scope() -> None:
+    """Refuse a grant without mcp:write, as the structured calendar error."""
+    if MCP_WRITE_SCOPE not in get_current_mcp_scopes():
+        raise CalendarToolError(
+            "write_scope_missing",
+            "This connection is read-only: its grant lacks the mcp:write scope. "
+            "Ask the user to reconnect the Nojoin connector (remove and "
+            "re-authorise it) to change their calendars.",
+        )
+
+
+async def _actor(db: Any, tool: str) -> Actor:
+    user = get_current_mcp_user()
+    grant_id = current_mcp_grant_id.get()
+    return Actor(
+        user=user,
+        user_zone=_user_zone(user),
+        tool=tool,
+        grant_id=grant_id,
+        client_name=await client_name_for_grant(db, grant_id),
+    )
+
+
+@mcp_tool(scope=MCP_WRITE_SCOPE)
+@calendar_tool
+async def create_calendar_event(  # noqa: PLR0913 - one parameter per event field
+    calendar_id: RowId,
+    title: Annotated[str, MinLen(1), MaxLen(255)],
+    start: str,
+    end: Optional[str] = None,
+    time_zone: Optional[str] = None,
+    all_day: bool = False,
+    description: Optional[Annotated[str, MaxLen(8000)]] = None,
+    location: Optional[Annotated[str, MaxLen(255)]] = None,
+    meeting_url: Optional[Annotated[str, MaxLen(2048)]] = None,
+    status: Literal["confirmed", "tentative"] = "confirmed",
+    show_as: Optional[Literal["busy", "free"]] = None,
+    recurrence: Optional[Annotated[str, MaxLen(500)]] = None,
+    attendees: Optional[Annotated[list[AttendeeInput], MaxLen(100)]] = None,
+    notify_attendees: bool = False,
+    idempotency_key: Optional[Annotated[str, MinLen(8), MaxLen(128)]] = None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Create an event on one of the user's calendars. Ask the user before calling this.
+
+    What it changes: adds one event, or a recurring series when `recurrence`
+    is set, to the calendar `calendar_id` names. That calendar must show
+    `writable` true in list_calendars.
+
+    Who it notifies: nobody unless notify_attendees is true. With it false,
+    the default, no email or invitation is sent and nothing reaches the
+    attendees; they are only written onto the event. With it true, every
+    attendee is emailed an invitation from the user's own address, and the
+    mail shows in the user's Sent folder. The result's `notifications` says
+    who was emailed or would have been.
+
+    Times: start and end are ISO 8601. A date-time with an offset
+    (2026-12-01T10:00:00+00:00) is an exact moment. One without an offset
+    needs time_zone, an IANA name such as Europe/London. time_zone is also
+    the zone the event keeps, so a weekly 10:00 meeting stays at 10:00 when
+    the clocks change; it defaults to the calendar's time zone. end is
+    required for a timed event. For an all-day event set all_day and pass
+    dates: end is the day after the last day (an event on 24 and 25 December
+    ends 2026-12-26), and defaults to one day.
+
+    recurrence is an RRULE value such as FREQ=WEEKLY;BYDAY=TU;COUNT=10.
+    Proton accepts DAILY, WEEKLY, MONTHLY and YEARLY, at most 49 occurrences
+    by COUNT, and UNTIL no later than 2037.
+
+    Holds: status "tentative" creates a hold, a provisional booking the user
+    has not confirmed. Holds show in list_calendar_events with is_hold true
+    and block time in get_free_busy. Confirm one later with
+    update_calendar_event (status "confirmed") or release it with
+    cancel_calendar_event. A hold can list attendees, but nobody is invited
+    until it is confirmed with notify_attendees true.
+
+    dry_run true checks everything and returns the event that would be
+    created and who would be notified, without creating anything.
+    idempotency_key makes a retry safe: a second call with the same key
+    returns the first call's event instead of creating another.
+
+    Returns the event as the provider stored it, read back after the write.
+    """
+    from backend.core.db import async_session_maker
+
+    _require_write_scope()
+    request = CreateRequest(
+        calendar_id=calendar_id,
+        title=title,
+        start=start,
+        end=end,
+        time_zone=time_zone,
+        all_day=all_day,
+        description=description,
+        location=location,
+        meeting_url=meeting_url,
+        status=status,
+        show_as=show_as,
+        recurrence=recurrence,
+        attendees=_attendees(attendees),
+        notify_attendees=notify_attendees,
+        idempotency_key=idempotency_key,
+        dry_run=dry_run,
+    )
+    async with async_session_maker() as db:
+        actor = await _actor(db, "create_calendar_event")
+        return await writes.create_event(db, actor, request)
+
+
+@mcp_tool(scope=MCP_WRITE_SCOPE)
+@calendar_tool
+async def update_calendar_event(  # noqa: PLR0913 - one parameter per event field
+    event_id: RowId,
+    scope: Optional[Literal["occurrence", "series"]] = None,
+    title: Optional[Annotated[str, MinLen(1), MaxLen(255)]] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    time_zone: Optional[str] = None,
+    all_day: Optional[bool] = None,
+    description: Optional[Annotated[str, MaxLen(8000)]] = None,
+    location: Optional[Annotated[str, MaxLen(255)]] = None,
+    meeting_url: Optional[Annotated[str, MaxLen(2048)]] = None,
+    status: Optional[Literal["confirmed", "tentative"]] = None,
+    show_as: Optional[Literal["busy", "free"]] = None,
+    recurrence: Optional[Annotated[str, MaxLen(500)]] = None,
+    add_attendees: Optional[Annotated[list[AttendeeInput], MaxLen(100)]] = None,
+    remove_attendees: Optional[Annotated[list[str], MaxLen(100)]] = None,
+    clear_fields: Optional[
+        list[Literal["description", "location", "meeting_url", "recurrence"]]
+    ] = None,
+    notify_attendees: bool = False,
+    expected_revision: Optional[Annotated[str, MaxLen(255)]] = None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Change an event the user organises. Ask the user before calling this.
+
+    What it changes: only the fields you pass; everything else on the event
+    stays as it is. To empty a field, name it in clear_fields. For an
+    invitation someone else sent, use respond_to_calendar_invitation
+    instead; this tool refuses it.
+
+    Recurring events: scope is required. "occurrence" changes only the
+    occurrence event_id names. "series" changes every occurrence: start and
+    end then give the new time of the occurrence you named, and the same
+    change of time of day and length applies to the whole series. A series
+    cannot be moved to another date this way. Changing a series' time or its
+    recurrence drops any occurrences that were edited one by one, and the
+    result says how many. Passing only start keeps the event's length.
+
+    Holds: status "confirmed" confirms a hold; status "tentative" turns an
+    event back into one.
+
+    Who it notifies: nobody unless notify_attendees is true. With it false,
+    attendees are not told about any change, including being added or
+    removed. With it true, every attendee is emailed the update, new
+    attendees get an invitation, and removed attendees get a cancellation,
+    all from the user's address. Confirming a hold with notify_attendees
+    true is how its attendees get invited.
+
+    Pass the event's `revision` as expected_revision to refuse the change if
+    the event was edited since you read it. dry_run true returns what would
+    change and who would be notified, and changes nothing.
+
+    Returns the event as the provider stored it, read back after the write.
+    """
+    from backend.core.db import async_session_maker
+
+    _require_write_scope()
+    request = UpdateRequest(
+        event_id=event_id,
+        scope=scope,
+        title=title,
+        start=start,
+        end=end,
+        time_zone=time_zone,
+        all_day=all_day,
+        description=description,
+        location=location,
+        meeting_url=meeting_url,
+        status=status,
+        show_as=show_as,
+        recurrence=recurrence,
+        add_attendees=_attendees(add_attendees),
+        remove_attendees=list(remove_attendees or []),
+        clear_fields=list(clear_fields or []),
+        notify_attendees=notify_attendees,
+        expected_revision=expected_revision,
+        dry_run=dry_run,
+    )
+    async with async_session_maker() as db:
+        actor = await _actor(db, "update_calendar_event")
+        return await writes.update_event(db, actor, request)
+
+
+@mcp_tool(scope=MCP_WRITE_SCOPE)
+@calendar_tool
+async def cancel_calendar_event(  # noqa: PLR0913 - one parameter per option
+    event_id: RowId,
+    scope: Optional[Literal["occurrence", "series"]] = None,
+    notify_attendees: bool = False,
+    expected_revision: Optional[Annotated[str, MaxLen(255)]] = None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Remove an event the user organises from their calendar at the provider.
+
+    Ask the user before calling this. Nojoin cannot undo it; the change log
+    in Nojoin keeps a copy of the event's details.
+
+    Use it to release a hold. It refuses an invitation someone else sent: to
+    turn one down, use respond_to_calendar_invitation with response
+    "declined".
+
+    Recurring events: scope is required. "occurrence" removes only the
+    occurrence event_id names; "series" removes every occurrence, edited
+    ones included.
+
+    Who it notifies: nobody unless notify_attendees is true. With it false,
+    attendees are not told, and anyone invited earlier still has the meeting
+    in their calendar; the result warns when that is the case. With it true,
+    every attendee who was invited is emailed a cancellation from the user's
+    address.
+
+    dry_run true returns what would be removed and who would be notified,
+    and removes nothing.
+    """
+    from backend.core.db import async_session_maker
+
+    _require_write_scope()
+    request = CancelRequest(
+        event_id=event_id,
+        scope=scope,
+        notify_attendees=notify_attendees,
+        expected_revision=expected_revision,
+        dry_run=dry_run,
+    )
+    async with async_session_maker() as db:
+        actor = await _actor(db, "cancel_calendar_event")
+        return await writes.cancel_event(db, actor, request)
+
+
+@mcp_tool(scope=MCP_WRITE_SCOPE)
+@calendar_tool
+async def respond_to_calendar_invitation(  # noqa: PLR0913 - one parameter per option
+    event_id: RowId,
+    response: Literal["accepted", "declined", "tentative"],
+    note: Optional[Annotated[str, MaxLen(500)]] = None,
+    notify_organiser: bool = True,
+    expected_revision: Optional[Annotated[str, MaxLen(255)]] = None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Answer an invitation someone else sent: accept, decline or accept tentatively.
+
+    Ask the user before calling this. The event must show can_respond true.
+
+    What it changes: the user's answer on their copy of the event. For a
+    recurring invitation the answer covers every occurrence; answering one
+    occurrence alone is not supported yet.
+
+    Who it notifies: the organiser IS EMAILED by default. With
+    notify_organiser true, the default, a reply is emailed to the organiser
+    from the user's address, carrying note if you pass one. Pass
+    notify_organiser false to answer without sending any email; organisers
+    who use Proton still see the answer in their own calendar, because Proton
+    shares the event between the two accounts, and the result lists them
+    under shown_by_provider. Other organisers then learn nothing. note needs
+    notify_organiser true.
+
+    dry_run true says what would change and who would hear (the reply shows
+    under would_email), and changes nothing.
+    """
+    from backend.core.db import async_session_maker
+
+    _require_write_scope()
+    request = RespondRequest(
+        event_id=event_id,
+        response=response,
+        note=note,
+        notify_organiser=notify_organiser,
+        expected_revision=expected_revision,
+        dry_run=dry_run,
+    )
+    async with async_session_maker() as db:
+        actor = await _actor(db, "respond_to_calendar_invitation")
+        return await writes.respond_to_invitation(db, actor, request)

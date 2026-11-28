@@ -50,6 +50,13 @@ current_mcp_scopes: ContextVar[frozenset[str]] = ContextVar(
 )
 
 
+# The token's grant_id claim, which names the OAuth client in the write change
+# log. Tokens issued before the claim existed carry none.
+current_mcp_grant_id: ContextVar[Optional[str]] = ContextVar(
+    "current_mcp_grant_id", default=None
+)
+
+
 def get_current_mcp_user() -> User:
     user = current_mcp_user.get()
     if user is None:
@@ -297,8 +304,12 @@ class MCPAuthMiddleware:
 
         context_token = current_mcp_user.set(user)
         scopes_token = current_mcp_scopes.set(granted_scopes)
+        grant_token = current_mcp_grant_id.set(
+            grant_id if isinstance(grant_id, str) and grant_id else None
+        )
         try:
             await self.app(scope, receive, send)
         finally:
+            current_mcp_grant_id.reset(grant_token)
             current_mcp_scopes.reset(scopes_token)
             current_mcp_user.reset(context_token)

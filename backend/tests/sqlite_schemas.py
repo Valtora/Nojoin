@@ -734,3 +734,50 @@ SHARING_SCHEMAS = (
     USER_IDENTITIES_SCHEMA,
     RECORDING_RESTORE_REQUESTS_SCHEMA,
 )
+
+CALENDAR_ATTENDEE_INVITES_SCHEMA = """
+CREATE TABLE calendar_attendee_invites (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    calendar_source_id INTEGER NOT NULL
+        REFERENCES calendar_sources(id) ON DELETE CASCADE,
+    event_uid VARCHAR(512) NOT NULL,
+    email VARCHAR(320) NOT NULL,
+    invited_at DATETIME,
+    invited_sequence INTEGER,
+    cancelled_at DATETIME,
+    UNIQUE(calendar_source_id, event_uid, email)
+)
+"""
+
+MCP_WRITE_AUDIT_SCHEMA = """
+CREATE TABLE mcp_write_audit (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    completed_at DATETIME,
+    grant_id VARCHAR(64),
+    client_name VARCHAR(256),
+    area VARCHAR(32) NOT NULL,
+    tool VARCHAR(64) NOT NULL,
+    action VARCHAR(16) NOT NULL,
+    scope VARCHAR(16),
+    connection_id INTEGER REFERENCES calendar_connections(id) ON DELETE SET NULL,
+    calendar_source_id INTEGER REFERENCES calendar_sources(id) ON DELETE SET NULL,
+    calendar_event_id INTEGER REFERENCES calendar_events(id) ON DELETE SET NULL,
+    provider VARCHAR(32),
+    calendar_name VARCHAR(255),
+    provider_event_key VARCHAR(512),
+    event_title VARCHAR(512),
+    event_start DATETIME,
+    changes JSON,
+    notifications JSON,
+    outcome VARCHAR(16) NOT NULL,
+    error_code VARCHAR(32),
+    idempotency_key VARCHAR(128),
+    request_fingerprint VARCHAR(64),
+    response_snapshot JSON
+)
+"""

@@ -73,4 +73,20 @@ def renew_calendar_push_channels_task(self):
     return {"status": "success", "connections_reconciled": reconciled}
 
 
+@celery_app.task(name="backend.worker.tasks.prune_mcp_write_audit_task", bind=True)
+def prune_mcp_write_audit_task(self):
+    """
+    Daily: delete assistant change-log rows older than 12 months.
+    """
+    from backend.core.db import async_session_maker
+    from backend.services.calendar_service.write_audit import prune_audit
+
+    async def _prune() -> int:
+        async with async_session_maker() as db:
+            return await prune_audit(db)
+
+    removed = _run_calendar_async(_prune())
+    return {"status": "success", "removed": removed}
+
+
 __all__ = [name for name in globals() if not name.startswith("__")]

@@ -1,13 +1,14 @@
 import json
 import logging
 import re
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import PlainTextResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_admin_user, get_current_user, get_db
-from backend.api.params import RowId
+from backend.api.params import PageOffset, RowId
 from backend.models.calendar import (
     CalendarActionResponse,
     CalendarAuthorisationStart,
@@ -20,6 +21,7 @@ from backend.models.calendar import (
     CalendarSelectionUpdate,
     CalendarSourceColourUpdate,
 )
+from backend.models.mcp_write_audit import McpWriteAuditPage, McpWriteAuditRead
 from backend.models.user import User
 from backend.services.calendar_push_service import (
     handle_google_notification,
@@ -41,7 +43,9 @@ from backend.services.calendar_service import (
     update_connection_selection,
     update_provider_configuration,
 )
+from backend.services.calendar_service.write_audit import list_changes
 from backend.utils.rate_limit import enforce_rate_limit
+from backend.utils.timezones import utc_naive_to_aware
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +118,44 @@ async def get_calendar_dashboard(
     db: AsyncSession = Depends(get_db),
 ) -> CalendarDashboardSummaryRead:
     return await get_dashboard_summary(db, current_user, month, timezone)
+
+
+@router.get("/assistant-changes", response_model=McpWriteAuditPage)
+async def read_assistant_changes(
+    connection_id: Optional[RowId] = Query(default=None),
+    skip: PageOffset = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> McpWriteAuditPage:
+    """The calendar changes assistants made for the user, newest first."""
+    rows, total = await list_changes(
+        db, current_user.id, connection_id=connection_id, skip=skip, limit=limit
+    )
+    items = []
+    for row in rows:
+        notifications = row.notifications if isinstance(row.notifications, dict) else {}
+        items.append(
+            McpWriteAuditRead(
+                id=row.id,
+                created_at=utc_naive_to_aware(row.created_at),
+                completed_at=utc_naive_to_aware(row.completed_at),
+                client_name=row.client_name,
+                tool=row.tool,
+                action=row.action,
+                scope=row.scope,
+                connection_id=row.connection_id,
+                provider=row.provider,
+                calendar_name=row.calendar_name,
+                event_title=row.event_title,
+                event_start=utc_naive_to_aware(row.event_start),
+                outcome=row.outcome,
+                error_code=row.error_code,
+                emailed=list(notifications.get("emailed") or []),
+                notifications_summary=notifications.get("summary"),
+            )
+        )
+    return McpWriteAuditPage(items=items, total=total, skip=skip, limit=limit)
 
 
 @router.post("/oauth/{provider}/start", response_model=CalendarAuthorisationStart)

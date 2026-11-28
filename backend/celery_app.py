@@ -245,6 +245,7 @@ TASK_ROUTES = {
     "backend.worker.tasks.sync_calendar_connections_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.ensure_calendar_push_channels_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.renew_calendar_push_channels_task": {"queue": IO_QUEUE},
+    "backend.worker.tasks.prune_mcp_write_audit_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.cleanup_temp_recordings": {"queue": IO_QUEUE},
     # Local disk work on the model volume. Belongs on a worker at all because
     # the API mounts that volume read-only.
@@ -317,6 +318,11 @@ celery_app.conf.update(
         "renew-calendar-push-channels-every-30m": {
             "task": "backend.worker.tasks.renew_calendar_push_channels_task",
             "schedule": 1800.0,
+        },
+        # The assistants' change log is kept 12 months (docs/MCP.md).
+        "prune-mcp-write-audit-every-24h": {
+            "task": "backend.worker.tasks.prune_mcp_write_audit_task",
+            "schedule": 86400.0,
         },
         # Hands a finished meeting back from a speaker inference lost with its
         # worker once its hold is older than the claim expiry (issue #828). An
