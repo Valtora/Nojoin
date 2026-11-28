@@ -247,6 +247,11 @@ func TestSeriesOccurrenceEditCreatesAnException(t *testing.T) {
 	if len(res.DeletedKeys) != 0 {
 		t.Fatalf("an occurrence edit keeps its key: %v", res.DeletedKeys)
 	}
+	plain := recordByKey(t, res.Events, "series-1@nojoin#20261215T100000Z").ProviderData
+	if edited.ProviderData.ExceptionEventID == nil || *edited.ProviderData.ExceptionEventID != edited.ProviderData.EventID ||
+		edited.ProviderData.MasterEventID != plain.MasterEventID || plain.ExceptionEventID != nil || plain.UID != "series-1@nojoin" {
+		t.Fatalf("provider_data names the master and the exception row: %+v / %+v", edited.ProviderData, plain)
+	}
 	rows := h.rowsByUID("series-1@nojoin")
 	if len(rows) != 2 {
 		t.Fatalf("expected master and exception, got %d rows", len(rows))

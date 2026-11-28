@@ -241,12 +241,16 @@ Every operation that returns events returns occurrences, one record per row Nojo
   "updated_at": "2026-11-28T10:05:02Z",
   "decrypt_warnings": [],
   "provider_data": {
-    "calendar_id": "...", "event_id": "...", "master_event_id": "...", "shared_event_id": "...",
-    "attendee_ids": {"4f1c...": "..."}, "is_proton_proton_invite": false,
-    "is_personal_single_edit": false
+    "uid": "abc123@nojoin", "calendar_id": "...", "event_id": "...", "master_event_id": "...",
+    "exception_event_id": null, "shared_event_id": "...", "attendee_ids": {"4f1c...": "..."},
+    "is_proton_proton_invite": false, "is_personal_single_edit": false
   }
 }
 ```
+
+Mapped onto the neutral model: `provider_event_id` is the remote ID, `revision` the provider revision,
+`series_key`, `original_start`, `occurrence_type` and `recurrence_rule` carry over as named, and
+`is_hold` is the hold flag.
 
 - `provider_event_id` is `{UID}` for a single event and `{UID}#{recurrence id}` for an occurrence of a
   series (design section 4.1), so an occurrence keeps its id when it is first edited on its own.
@@ -272,7 +276,9 @@ Every operation that returns events returns occurrences, one record per row Nojo
   someone else), and `recurrence_unreadable` for a rule the helper cannot expand, in which case only
   the series' first occurrence is returned. A record is still returned with what could be read.
 - `provider_data` is for the caller to store and hand back unchanged; it is not part of the neutral
-  model.
+  model. `event_id` is the Proton row the record was read from; `master_event_id` the series master
+  (the same row for a single event); `exception_event_id` the exception row, or null when the
+  occurrence has none.
 
 ### Write result
 

@@ -30,9 +30,11 @@ type AttendeeOut struct {
 
 // ProviderData is what Python stores and hands back unchanged.
 type ProviderData struct {
+	UID                  string            `json:"uid"`
 	CalendarID           string            `json:"calendar_id"`
 	EventID              string            `json:"event_id"`
 	MasterEventID        string            `json:"master_event_id"`
+	ExceptionEventID     *string           `json:"exception_event_id"`
 	SharedEventID        string            `json:"shared_event_id"`
 	AttendeeIDs          map[string]string `json:"attendee_ids"`
 	IsProtonProtonInvite bool              `json:"is_proton_proton_invite"`
@@ -363,7 +365,13 @@ func (a *Access) ToRecord(o Occurrence) Record {
 	if master != nil {
 		masterID = master.Row.ID
 	}
+	var exceptionID *string
+	if o.Kind == "exception" {
+		exceptionID = strp(row.ID)
+	}
 	rec.ProviderData = ProviderData{
+		UID:                  uid,
+		ExceptionEventID:     exceptionID,
 		CalendarID:           a.CalendarID,
 		EventID:              row.ID,
 		MasterEventID:        masterID,
