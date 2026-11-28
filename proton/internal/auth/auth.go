@@ -89,9 +89,11 @@ func (a authResponse) scopes() []string {
 	return nil
 }
 
-// anonymousSession asks Proton for the session it now wants before
-// /auth/v4/info. A server without the endpoint (the test server, older
-// deployments) answers 404 or 405, and the login goes ahead without it.
+// anonymousSession opens the unauthenticated session some Proton deployments
+// want before /auth/v4/info. srpProofs calls it only after /auth/v4/info has
+// answered 401: on 28 Nov 2026 Proton answered /auth/v4/info without one, and
+// refused to open one for x-pm-appversion "Other" (422, code 8004). A server
+// without the endpoint answers 404 or 405, and the login goes ahead without it.
 func anonymousSession(ctx context.Context, c *papi.Client) error {
 	var out struct {
 		UID         string
@@ -119,9 +121,6 @@ func LoginStart(ctx context.Context, c *papi.Client, args LoginStartArgs) (*Logi
 	}
 	if args.Password == "" {
 		return nil, protocol.FieldError(protocol.CodeInvalidArgument, "password", "password is required.")
-	}
-	if err := anonymousSession(ctx, c); err != nil {
-		return nil, papi.ToProtocol(err, false)
 	}
 	var hvHeader http.Header
 	if hv := args.HumanVerification; hv != nil && hv.Token != "" {
@@ -180,7 +179,15 @@ type authInfo struct {
 
 func srpProofs(ctx context.Context, c *papi.Client, username string, password []byte) (authInfo, *srp.Proofs, error) {
 	var info authInfo
-	if err := c.Post(ctx, "/auth/v4/info", map[string]string{"Username": username}, &info); err != nil {
+	err := c.Post(ctx, "/auth/v4/info", map[string]string{"Username": username}, &info)
+	if errors.Is(err, papi.ErrAccessTokenExpired) && c.UID == "" {
+		// Proton wants an anonymous session first; open one and ask again.
+		if aerr := anonymousSession(ctx, c); aerr != nil {
+			return info, nil, papi.ToProtocol(aerr, false)
+		}
+		err = c.Post(ctx, "/auth/v4/info", map[string]string{"Username": username}, &info)
+	}
+	if err != nil {
 		return info, nil, loginError(err)
 	}
 	// NewAuth checks the modulus signature against Proton's SRP key.

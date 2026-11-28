@@ -93,6 +93,7 @@ type Server struct {
 	TOTP            string // non-empty: TOTP is required
 	FIDO2Only       bool
 	RequireAnon     bool
+	RefuseAnon      bool // POST /auth/v4/sessions answers 422, code 8004, as Proton did for "Other" on 28 Nov 2026
 	HumanCheck      bool // the first sign-in asks for a CAPTCHA
 	SaltsNeedScope  bool
 	TimeZone        string
@@ -317,6 +318,10 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	switch {
 	case path == "/auth/v4/sessions" && r.Method == http.MethodPost:
+		if s.RefuseAnon {
+			apiError(w, 422, 8004, "Operation not allowed")
+			return
+		}
 		if !s.RequireAnon {
 			apiError(w, 404, 404, "Not found")
 			return

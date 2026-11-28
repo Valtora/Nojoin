@@ -63,12 +63,30 @@ func TestLoginOnePasswordWithAnonymousSession(t *testing.T) {
 		t.Fatal("primary time zone not passed on")
 	}
 	calls := h.s.Calls()
-	if calls[0].Path != "/auth/v4/sessions" || calls[1].Path != "/auth/v4/info" {
-		t.Fatalf("the anonymous session must come first: %s, %s", calls[0].Path, calls[1].Path)
+	if calls[0].Path != "/auth/v4/info" || calls[1].Path != "/auth/v4/sessions" || calls[2].Path != "/auth/v4/info" {
+		t.Fatalf("an anonymous session must be opened only after info answers 401: %s, %s, %s",
+			calls[0].Path, calls[1].Path, calls[2].Path)
 	}
 	for _, c := range calls {
 		if c.AppVersion != "Other" {
 			t.Fatalf("%s sent x-pm-appversion %q", c.Path, c.AppVersion)
+		}
+	}
+}
+
+// Proton refused to open an anonymous session for "Other" (422, 8004) on 28 Nov
+// 2026 while answering /auth/v4/info without one. Sign-in must not ask for one.
+func TestLoginWithoutAnonymousSession(t *testing.T) {
+	h := newHarness(t)
+	h.s.RefuseAnon = true
+	var start loginStartJSON
+	h.okAs("login_start", nil, map[string]any{"username": "alice", "password": "correct horse"}, &start)
+	if start.Next != "unlock" {
+		t.Fatalf("unexpected login_start result %+v", start)
+	}
+	for _, c := range h.s.Calls() {
+		if c.Path == "/auth/v4/sessions" {
+			t.Fatal("login_start asked for an anonymous session it did not need")
 		}
 	}
 }
