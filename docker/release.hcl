@@ -4,7 +4,9 @@
 #
 # worker-io is built FROM the worker target in the same graph, so it layers
 # onto exactly the worker this run produced without that worker being pushed
-# first. The compose files do the same through the worker_base context.
+# first. The compose files do the same through the worker_base context. The
+# proton-helper target is linked the same way into api and worker-io; bake
+# builds a linked target without exporting it, so nothing is pushed for it.
 
 variable "IMAGE_BASE" {
   default = "ghcr.io/valtora/nojoin"
@@ -53,10 +55,23 @@ target "_release" {
   }
 }
 
+# nojoin-proton, the Proton Calendar helper. api and worker-io each define a
+# proton-helper stage so they build on their own; in a release both take this
+# one build instead, through the named context of the same name.
+target "proton-helper" {
+  platforms  = ["linux/amd64"]
+  context    = "."
+  dockerfile = "docker/Dockerfile.api"
+  target     = "proton-helper"
+}
+
 target "api" {
   inherits   = ["_release"]
   context    = "."
   dockerfile = "docker/Dockerfile.api"
+  contexts = {
+    "proton-helper" = "target:proton-helper"
+  }
   args = {
     NOJOIN_SERVER_VERSION = VERSION
   }
@@ -75,7 +90,8 @@ target "worker-io" {
   context    = "."
   dockerfile = "docker/Dockerfile.worker-io"
   contexts = {
-    worker_base = "target:worker"
+    worker_base     = "target:worker"
+    "proton-helper" = "target:proton-helper"
   }
   args = {
     WORKER_BASE_IMAGE = "worker_base"

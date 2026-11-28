@@ -65,6 +65,32 @@ RUN npm install -g @anthropic-ai/claude-code @openai/codex \
     && mv /usr/local/lib/node_modules/@anthropic-ai /usr/local/lib/node_modules/@openai \
         /out/usr/local/lib/node_modules/
 
+# --- Proton helper stage ---
+# nojoin-proton, the Go helper Nojoin runs for Proton Calendar (see
+# proton/PROTOCOL.md), built as one static binary. docker/Dockerfile.api and
+# docker/Dockerfile.worker-io carry this same stage, so a build outside bake
+# needs nothing extra; keep the two identical. docker/release.hcl builds it once
+# as its proton-helper target and hands that build to both images in place of
+# this stage. Modules are checked against proton/go.sum, and GOTOOLCHAIN=local
+# stops the go command fetching a different toolchain.
+FROM golang:1.27.4-bookworm@sha256:ce59b41415e2524ae99926fe1f37ce48ba8c194dcbd2a56a65436cdcefa2bd34 AS proton-helper
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV GOTOOLCHAIN=local
+ENV CGO_ENABLED=0
+
+# Every stage upgrades the base's packages (#585): go mod download below
+# verifies the module proxy against the OS trust store.
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY proton/go.mod proton/go.sum ./
+RUN go mod download && go mod verify
+COPY proton/ ./
+RUN go build -mod=readonly -trimpath -buildvcs=false -ldflags="-s -w -buildid=" \
+        -o /out/nojoin-proton ./cmd/nojoin-proton \
+    && printf '{"v":1,"op":"version"}' | /out/nojoin-proton | grep -q '"ok":true'
+
 FROM ${WORKER_BASE_IMAGE}
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -74,6 +100,9 @@ USER root
 # present in the PyTorch base), which runs the Codex wrapper, and the CLIs.
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=cli /out/ /
+
+# The Proton Calendar helper, which the calendar sync on this lane runs.
+COPY --from=proton-helper /out/nojoin-proton /usr/local/bin/nojoin-proton
 
 # The Agent SDK wheel bundles its own copy of the Claude Code binary (~360 MB),
 # which it runs only when no cli_path is given. backend/processing/cli/manager.py
