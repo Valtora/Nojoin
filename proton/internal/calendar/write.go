@@ -27,6 +27,8 @@ type WriteResult struct {
 	Stats               map[string]int `json:"stats"`
 	ITIP                *ITIP          `json:"itip"`
 	OrganiserSeesAnswer *bool          `json:"organiser_sees_answer,omitempty"`
+	// ShownByProvider (respond only) lists who sees the answer without mail.
+	ShownByProvider *[]Person `json:"shown_by_provider,omitempty"`
 
 	// sent is the series as written, for when the read-back fails.
 	sent []*Decoded

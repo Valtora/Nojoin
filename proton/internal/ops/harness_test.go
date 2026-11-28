@@ -220,16 +220,17 @@ func timed(at string) map[string]string {
 }
 
 type writeResult struct {
-	Written     bool              `json:"written"`
-	Verified    bool              `json:"verified"`
-	Events      []calendar.Record `json:"events"`
-	DeletedKeys []string          `json:"deleted_keys"`
-	Before      []calendar.Record `json:"before"`
-	Revision    *string           `json:"revision"`
-	Warnings    []string          `json:"warnings"`
-	Stats       map[string]int    `json:"stats"`
-	ITIP        *calendar.ITIP    `json:"itip"`
-	SeesAnswer  *bool             `json:"organiser_sees_answer"`
+	Written     bool               `json:"written"`
+	Verified    bool               `json:"verified"`
+	Events      []calendar.Record  `json:"events"`
+	DeletedKeys []string           `json:"deleted_keys"`
+	Before      []calendar.Record  `json:"before"`
+	Revision    *string            `json:"revision"`
+	Warnings    []string           `json:"warnings"`
+	Stats       map[string]int     `json:"stats"`
+	ITIP        *calendar.ITIP     `json:"itip"`
+	SeesAnswer  *bool              `json:"organiser_sees_answer"`
+	Shown       *[]calendar.Person `json:"shown_by_provider"`
 }
 
 func (h *harness) create(uid string, event map[string]any, share bool) writeResult {

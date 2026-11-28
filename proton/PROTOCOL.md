@@ -557,8 +557,9 @@ Args: `{"calendar_id": "...", "target": {"uid": "...", "recurrence_id": null},
 - A response to one occurrence of a recurring invitation is `unsupported`; `recurrence_id` must be null.
 - The same answer as the current one returns `written` false and touches nothing. A failed personal-part
   update after the answer landed is the warning `personal_part_not_updated`, not a failure.
-- `not_attendee` for the user's own event. The result adds `organiser_sees_answer`: true when the event
-  is a Proton-to-Proton invitation, whose organiser sees the answer in their own calendar without mail.
+- `not_attendee` for the user's own event. The result adds `organiser_sees_answer`, true when the event
+  is a Proton-to-Proton invitation, and `shown_by_provider`, the people who see the answer without any
+  mail: `[{"name", "email", "is_self"}]`, that invitation's organiser, or empty.
 
 ### `send_itip`
 
