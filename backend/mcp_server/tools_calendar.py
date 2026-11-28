@@ -58,6 +58,7 @@ from backend.services.calendar_service.write_inputs import (
 from backend.utils.timezones import get_user_timezone_name, utc_naive_to_aware
 
 T = TypeVar("T")
+_EVENTS_LIMIT_MAX = 100
 
 
 class CalendarRefusal(ToolError):
@@ -96,7 +97,7 @@ def _user_zone(user: Any) -> str:
 async def list_calendar_events(  # noqa: PLR0913 - one parameter per filter
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    limit: Annotated[int, Ge(1), Le(100)] = 25,
+    limit: int = 25,
     skip: PageOffset = 0,
     calendar_ids: Optional[list[RowId]] = None,
     query: Optional[Annotated[str, MaxLen(200)]] = None,
@@ -140,6 +141,8 @@ async def list_calendar_events(  # noqa: PLR0913 - one parameter per filter
 
     user = get_current_mcp_user()
     user_zone = _user_zone(user)
+    # Clamped, as the tool always did, so existing callers keep working.
+    limit = max(1, min(int(limit), _EVENTS_LIMIT_MAX))
     start = resolve_filter_bound(
         start_date, field="start_date", user_zone=user_zone, is_end=False
     )

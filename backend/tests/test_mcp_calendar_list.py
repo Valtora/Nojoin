@@ -343,6 +343,11 @@ async def test_paging_query_status_and_series_filters(session_maker) -> None:
     series = await list_calendar_events(series_id=series_id(1, "series-a"))
     unknown_series = await list_calendar_events(series_id="1-" + "0" * 20)
 
+    # limit is clamped to 1-100, as it always was, never refused.
+    everything = await list_calendar_events(limit=500)
+    at_least_one = await list_calendar_events(limit=0)
+    assert len(everything) == 6
+    assert len(at_least_one) == 1
     assert [e["id"] for e in first] == [1, 10]
     assert [e["id"] for e in second] == [2, 3]
     assert [e["id"] for e in holds] == [10]
