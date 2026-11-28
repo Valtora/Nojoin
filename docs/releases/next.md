@@ -76,7 +76,7 @@ Keep every heading, empty or not. Cutting the release drops the empty ones
 - Opening a meeting from **Person Details** while the person has changes you have not saved asks first, and staying keeps the dialog open with your changes. The link used to leave at once and lose them (#972).
 - **Person Details** shows a person's meetings when an older meeting's transcript holds a time too large to read, as one restored from an archive or edited by hand can, and counts that part of the transcript as no speech. The meetings failed to load (#972).
 - In **Person Details**, the first Tab shows **Skip to contact details**, which takes keyboard focus straight to **Full Name**. Reaching the form used to take a Tab for every meeting listed, 53 presses with the full 50 (#972).
-- **Proton Calendar** can be connected under **Settings > Integrations > Calendars**, through an unofficial route: Proton's private API, with the risks shown before you sign in. Its calendars sync like Google and Outlook ones, and assistants can write to them (#1094).
+- **Proton Calendar** can be connected under **Settings > Integrations > Calendars**, through an unofficial route: Proton's private API, with the risks shown before you sign in. Signing in answers as soon as the account is connected, and the first sync runs in the background with a progress bar you can close. Its calendars then sync like Google and Outlook ones, and assistants can write to them (#1094).
 - Calendar events keep the time zone they were written in, the organiser, each attendee's answer and your own, whether they show as busy or free, and their series. An Outlook event you organise that shows as tentative is now a hold (#1094).
 
 ### Settings and administration

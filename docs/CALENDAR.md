@@ -127,7 +127,9 @@ Every user can connect Proton; there is no setting to turn it on. The connection
 5. If your account has two-factor sign-in, enter the code from your authenticator app. An account whose only second factor is a security key cannot connect; add an authenticator app in Proton's settings first.
 6. If your account uses a separate mailbox password, enter it.
 
-Your default Proton calendar is then selected and synced. Subscribed and holiday calendars are listed read-only.
+7. Nojoin shows **Connected** with your account, and a progress bar while it fetches your events for the first time, which can take a minute or two. Select **Continue in background** to close the dialog: the sync carries on, and the account shows **Syncing** with the same progress in **Calendars** until it finishes. If it fails, the account shows **Needs attention** with the reason.
+
+Your default Proton calendar is selected and synced. Subscribed and holiday calendars are listed read-only.
 
 ### What Proton Sync Does
 
