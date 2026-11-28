@@ -3,7 +3,7 @@ import logging
 import re
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
 from fastapi.responses import PlainTextResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +20,10 @@ from backend.models.calendar import (
     CalendarProviderStatusRead,
     CalendarSelectionUpdate,
     CalendarSourceColourUpdate,
+    ProtonConnectStart,
+    ProtonConnectStepRead,
+    ProtonConnectTwoFactor,
+    ProtonConnectUnlock,
 )
 from backend.models.mcp_write_audit import McpWriteAuditPage, McpWriteAuditRead
 from backend.models.user import User
@@ -37,11 +41,15 @@ from backend.services.calendar_service import (
     get_overview,
     handle_callback,
     list_provider_statuses,
+    proton_connect,
     refresh_connection_now,
     start_authorisation,
     update_calendar_source_colour,
     update_connection_selection,
     update_provider_configuration,
+)
+from backend.services.calendar_service.persistence import (
+    _serialise_connection_with_push,
 )
 from backend.services.calendar_service.write_audit import list_changes
 from backend.utils.rate_limit import enforce_rate_limit
@@ -118,6 +126,119 @@ async def get_calendar_dashboard(
     db: AsyncSession = Depends(get_db),
 ) -> CalendarDashboardSummaryRead:
     return await get_dashboard_summary(db, current_user, month, timezone)
+
+
+# Repeated wrong passwords can lock a Proton account, so sign-in attempts are
+# limited per user as well as per address.
+PROTON_CONNECT_LIMIT = 5
+PROTON_CONNECT_WINDOW_SECONDS = 10 * 60
+
+
+async def _limit_proton_attempts(request: Request, user: User) -> None:
+    await enforce_rate_limit(
+        request,
+        "calendar-proton-connect",
+        PROTON_CONNECT_LIMIT,
+        PROTON_CONNECT_WINDOW_SECONDS,
+        discriminator=str(user.id),
+        detail="Too many Proton sign-in attempts. Wait ten minutes, then try again.",
+    )
+
+
+async def _proton_step(
+    db: AsyncSession, step: proton_connect.ConnectStep
+) -> ProtonConnectStepRead:
+    connection = None
+    if step.connection is not None:
+        connection = await _serialise_connection_with_push(db, step.connection)
+    return ProtonConnectStepRead(
+        step=step.step,
+        flow_id=step.flow_id,
+        connection=connection,
+        warnings=step.warnings,
+    )
+
+
+def _proton_refusal(error: proton_connect.ProtonConnectError) -> HTTPException:
+    status = 409 if error.code == "human_verification_required" else 400
+    return HTTPException(
+        status_code=status,
+        detail={"code": error.code, "message": error.message, **error.details},
+    )
+
+
+@router.post("/proton/connect", response_model=ProtonConnectStepRead)
+async def connect_proton(
+    payload: ProtonConnectStart,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ProtonConnectStepRead:
+    """Sign in to Proton; the answer says which step comes next."""
+    await _limit_proton_attempts(request, current_user)
+    verification = None
+    if payload.human_verification_token:
+        verification = {
+            "token": payload.human_verification_token,
+            "type": payload.human_verification_type or "captcha",
+        }
+    try:
+        step = await proton_connect.start(
+            db,
+            current_user,
+            username=payload.username.strip(),
+            password=payload.password,
+            verification=verification,
+        )
+    except proton_connect.ProtonConnectError as error:
+        raise _proton_refusal(error) from error
+    return await _proton_step(db, step)
+
+
+@router.post("/proton/connect/{flow_id}/totp", response_model=ProtonConnectStepRead)
+async def connect_proton_two_factor(
+    flow_id: Annotated[str, Path(max_length=64)],
+    payload: ProtonConnectTwoFactor,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ProtonConnectStepRead:
+    await _limit_proton_attempts(request, current_user)
+    try:
+        step = await proton_connect.two_factor(
+            db,
+            current_user,
+            flow_id,
+            code=payload.code.strip(),
+            username=payload.username.strip(),
+            password=payload.password,
+        )
+    except proton_connect.ProtonConnectError as error:
+        raise _proton_refusal(error) from error
+    return await _proton_step(db, step)
+
+
+@router.post("/proton/connect/{flow_id}/unlock", response_model=ProtonConnectStepRead)
+async def connect_proton_unlock(
+    flow_id: Annotated[str, Path(max_length=64)],
+    payload: ProtonConnectUnlock,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ProtonConnectStepRead:
+    await _limit_proton_attempts(request, current_user)
+    try:
+        step = await proton_connect.unlock(
+            db,
+            current_user,
+            flow_id,
+            username=payload.username.strip(),
+            password=payload.password,
+            mailbox_password=payload.mailbox_password,
+        )
+    except proton_connect.ProtonConnectError as error:
+        raise _proton_refusal(error) from error
+    return await _proton_step(db, step)
 
 
 @router.get("/assistant-changes", response_model=McpWriteAuditPage)

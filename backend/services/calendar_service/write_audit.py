@@ -19,8 +19,10 @@ import asyncio
 import hashlib
 import json
 import time
+import weakref
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -44,7 +46,11 @@ _LOCK_POLL_SECONDS = 0.2
 # Namespaces keep the two kinds of advisory lock from ever sharing a key.
 _CONNECTION_LOCK = 0x4E4A01
 _IDEMPOTENCY_LOCK = 0x4E4A02
-_local_locks: dict[int, asyncio.Lock] = {}
+# Per event loop, since an asyncio lock cannot be shared across loops.
+_local_locks: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[int, asyncio.Lock]]" = weakref.WeakKeyDictionary()
+_held_locks: ContextVar[frozenset[int]] = ContextVar(
+    "calendar_held_locks", default=frozenset()
+)
 
 
 @dataclass(frozen=True)
@@ -109,7 +115,8 @@ def _busy() -> CalendarToolError:
 
 @asynccontextmanager
 async def _local_lock(key: int, wait: float) -> AsyncIterator[None]:
-    lock = _local_locks.setdefault(key, asyncio.Lock())
+    locks = _local_locks.setdefault(asyncio.get_running_loop(), {})
+    lock = locks.setdefault(key, asyncio.Lock())
     try:
         await asyncio.wait_for(lock.acquire(), timeout=wait)
     except TimeoutError as exc:
@@ -122,7 +129,26 @@ async def _local_lock(key: int, wait: float) -> AsyncIterator[None]:
 
 @asynccontextmanager
 async def advisory_lock(key: int, *, wait: float) -> AsyncIterator[None]:
-    """Hold an advisory lock for the block, or refuse with ``busy``."""
+    """Hold an advisory lock for the block, or refuse with ``busy``.
+
+    Re-entrant within one task: a provider call made while the same lock is
+    already held (a write's read-back, a refresh in the middle of a write)
+    goes ahead instead of waiting on itself.
+    """
+    held = _held_locks.get()
+    if key in held:
+        yield
+        return
+    marker = _held_locks.set(held | {key})
+    try:
+        async with _acquire(key, wait=wait):
+            yield
+    finally:
+        _held_locks.reset(marker)
+
+
+@asynccontextmanager
+async def _acquire(key: int, *, wait: float) -> AsyncIterator[None]:
     maker = _session_maker()
     bind = maker.kw.get("bind")
     if bind is None or bind.dialect.name != "postgresql":

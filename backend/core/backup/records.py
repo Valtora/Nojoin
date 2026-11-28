@@ -211,12 +211,29 @@ def _serialise_calendar_connections(
     serialised: List[Dict[str, Any]] = []
     for row in rows:
         row_data = row.model_dump(mode="json")
-        row_data["access_token"] = decrypt_secret(row.access_token_encrypted)
-        row_data["refresh_token"] = decrypt_secret(row.refresh_token_encrypted)
         row_data.pop("access_token_encrypted", None)
         row_data.pop("refresh_token_encrypted", None)
+        # A provider's extra secrets never go into an archive (maintainer
+        # decision Q4): Proton's key passphrase opens the user's mail, and
+        # archives are unencrypted. Its connection restores as reconnect
+        # required, with its calendars and events.
+        row_data.pop("provider_secrets_encrypted", None)
+        if row.provider == CalendarProvider.PROTON.value:
+            row_data["access_token"] = None
+            row_data["refresh_token"] = None
+            row_data.update(_PROTON_RECONNECT)
+        else:
+            row_data["access_token"] = decrypt_secret(row.access_token_encrypted)
+            row_data["refresh_token"] = decrypt_secret(row.refresh_token_encrypted)
         serialised.append(row_data)
     return serialised
+
+
+_PROTON_RECONNECT = {
+    "sync_status": "reauthorisation_required",
+    "sync_error": "Reconnect this Proton account: backups do not carry its sign-in.",
+    "token_expires_at": None,
+}
 
 
 def _prepare_calendar_provider_config_for_restore(
@@ -248,6 +265,11 @@ def _prepare_calendar_connection_for_restore(
     restored = data.copy()
     access_token = restored.pop("access_token", None)
     refresh_token = restored.pop("refresh_token", None)
+    restored.pop("provider_secrets_encrypted", None)
+    if restored.get("provider") == CalendarProvider.PROTON.value:
+        # Whatever an archive holds, a Proton sign-in is never restored.
+        access_token = refresh_token = None
+        restored.update(_PROTON_RECONNECT)
 
     if "access_token_encrypted" not in restored or access_token is not None:
         stripped_access = (

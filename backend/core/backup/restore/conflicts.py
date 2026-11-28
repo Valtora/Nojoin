@@ -8,6 +8,7 @@ deduplicate, and transcripts defer to whatever the target already has.
 
 import logging
 import os
+from typing import Any
 from uuid import uuid4
 
 from sqlmodel import select
@@ -67,6 +68,13 @@ def _resolve_calendar_provider_configs(ctx: "_RowContext") -> "RowOutcome":
     return RowOutcome.INSERT
 
 
+def _keep_live_proton_connection(ctx: "_RowContext", existing: Any) -> "RowOutcome":
+    """An archive carries no Proton sign-in, so a live one is kept as it is."""
+    if ctx.old_id is not None:
+        ctx.state.id_map["calendar_connections"][ctx.old_id] = existing.id
+    return RowOutcome.HANDLED
+
+
 def _resolve_calendar_connections(ctx: "_RowContext") -> "RowOutcome":
     """Resolve conflicts for a calendar_connections row before insert."""
     candidate = ctx.model_cls.model_validate(ctx.item_data)
@@ -79,6 +87,9 @@ def _resolve_calendar_connections(ctx: "_RowContext") -> "RowOutcome":
             == candidate.provider_account_id
         )
     ).first()
+
+    if existing_connection and candidate.provider == "proton":
+        return _keep_live_proton_connection(ctx, existing_connection)
 
     if existing_connection:
         if ctx.state.overwrite_existing:

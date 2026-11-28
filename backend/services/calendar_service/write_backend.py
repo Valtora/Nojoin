@@ -324,9 +324,20 @@ def register_write_backend(backend: CalendarWriteBackend) -> None:
     _BACKENDS[backend.provider] = backend
 
 
+def _built_in(provider: str) -> CalendarWriteBackend | None:
+    if provider == "proton":
+        from .proton_backend import ProtonBackend
+
+        return ProtonBackend()
+    return None
+
+
 def write_backend_for(provider: str) -> CalendarWriteBackend:
-    """The provider's backend; a provider with none registered is read-only."""
-    return _BACKENDS.get(provider) or ReadOnlyBackend(provider)
+    """The provider's backend; a provider with none registered is read-only.
+
+    A registered backend (a test's) wins over the built-in one.
+    """
+    return _BACKENDS.get(provider) or _built_in(provider) or ReadOnlyBackend(provider)
 
 
 def unregister_write_backend(provider: str) -> None:

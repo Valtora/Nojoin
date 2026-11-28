@@ -23,6 +23,7 @@ from backend.models.calendar import (
     CalendarConnectionRead,
     CalendarOverviewRead,
     CalendarProvider,
+    CalendarProviderAvailabilityRead,
     CalendarSelectionUpdate,
     CalendarSource,
     CalendarSourceColourUpdate,
@@ -131,8 +132,16 @@ async def get_overview(db: AsyncSession, user: User) -> CalendarOverviewRead:
     )
     return CalendarOverviewRead(
         providers=[
-            _serialise_provider_availability(provider_status)
-            for provider_status in providers
+            *(
+                _serialise_provider_availability(provider_status)
+                for provider_status in providers
+            ),
+            # Proton needs no app credentials, so every user can connect it.
+            CalendarProviderAvailabilityRead(
+                provider=CalendarProvider.PROTON.value,
+                display_name=PROVIDER_DISPLAY_NAMES[CalendarProvider.PROTON.value],
+                configured=True,
+            ),
         ],
         connections=[
             _serialise_connection(
@@ -337,6 +346,11 @@ async def disconnect_connection(
         teardown_push_channels_for_connection,
     )
 
+    if connection.provider == CalendarProvider.PROTON.value:
+        from .proton_connect import end_session
+
+        await end_session(db, connection)
+
     try:
         await teardown_push_channels_for_connection(db, connection)
     except Exception as exc:  # noqa: BLE001 -- boundary: channels expire on their own; the disconnect must still complete
@@ -407,6 +421,11 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
         await db.commit()
         return
 
+    if connection.provider == CalendarProvider.PROTON.value:
+        from .proton_sync import sync_proton_connection
+
+        await sync_proton_connection(db, connection)
+        return
     if connection.provider not in OAUTH_PROVIDERS:
         connection.sync_status = CalendarSyncStatus.ERROR.value
         connection.sync_error = (

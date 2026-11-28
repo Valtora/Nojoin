@@ -619,3 +619,31 @@ class CalendarDashboardSummaryRead(SQLModel):
     agenda_items: List[CalendarDashboardEventRead]
     recording_items: List[CalendarDashboardRecordingRead] = Field(default_factory=list)
     next_event: Optional[CalendarDashboardEventRead] = None
+
+
+class ProtonConnectStart(SQLModel):
+    username: str = Field(min_length=1, max_length=320)
+    password: str = Field(min_length=1, max_length=1024)
+    # Set when the user has finished Proton's human check.
+    human_verification_token: Optional[str] = Field(default=None, max_length=4096)
+    human_verification_type: Optional[str] = Field(default=None, max_length=32)
+
+
+class ProtonConnectTwoFactor(SQLModel):
+    code: str = Field(min_length=6, max_length=16)
+    username: str = Field(min_length=1, max_length=320)
+    password: str = Field(min_length=1, max_length=1024)
+
+
+class ProtonConnectUnlock(SQLModel):
+    username: str = Field(min_length=1, max_length=320)
+    password: str = Field(min_length=1, max_length=1024)
+    mailbox_password: str = Field(min_length=1, max_length=1024)
+
+
+class ProtonConnectStepRead(SQLModel):
+    # two_factor, mailbox_password or done
+    step: str
+    flow_id: Optional[str] = None
+    connection: Optional[CalendarConnectionRead] = None
+    warnings: List[str] = Field(default_factory=list)
