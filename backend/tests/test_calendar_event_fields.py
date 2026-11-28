@@ -324,6 +324,11 @@ def test_every_vendored_windows_zone_resolves() -> None:
     assert len(zones) > 100
     unresolved = [name for name in zones if iana_zone_name(name) is None]
     assert unresolved == []
+    # Canonical names only: a zone database without tzdata's backward links
+    # (Ubuntu's tzdata without tzdata-legacy) has no CLDR legacy names.
+    legacy = {"America/Buenos_Aires", "Asia/Calcutta", "Europe/Kiev", "America/Godthab"}
+    assert legacy.isdisjoint(zones.values())
+    assert zones["India Standard Time"] == "Asia/Kolkata"
 
 
 # --- Ranges -----------------------------------------------------------------
