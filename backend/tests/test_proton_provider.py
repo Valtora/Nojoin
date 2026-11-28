@@ -566,3 +566,23 @@ async def test_four_helpers_at_most_run_at_once(helper, monkeypatch) -> None:
     # Eight calls of 0.3 s, four at a time, take two rounds.
     assert time.monotonic() - started >= 0.55
     assert timedelta(seconds=time.monotonic() - started) < timedelta(seconds=10)
+
+
+def test_connect_refusal_names_protons_code() -> None:
+    """A refusal shows Proton's code, so it is not mistaken for an outage."""
+    refused = proton_connect._connect_error(
+        HelperError(
+            "provider_rejected",
+            "Proton refused the request: Operation not allowed",
+            provider_code=8004,
+            http_status=422,
+        )
+    )
+    assert refused.code == "provider_rejected"
+    assert refused.message == "Proton refused the sign-in request. Proton's code: 8004."
+
+    outage = proton_connect._connect_error(HelperError("provider_unavailable", "down"))
+    assert (
+        outage.message
+        == "Nojoin could not connect to Proton. Try again in a few minutes."
+    )

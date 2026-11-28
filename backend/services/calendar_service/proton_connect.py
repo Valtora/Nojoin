@@ -50,6 +50,7 @@ _CONNECT_MESSAGES = {
     ),
     "wrong_mailbox_password": "That mailbox password did not open the account's keys.",
     "rate_limited": "Proton asked Nojoin to slow down. Wait a minute, then try again.",
+    "provider_rejected": "Proton refused the sign-in request.",
 }
 
 
@@ -82,6 +83,9 @@ def _connect_error(error: HelperError) -> ProtonConnectError:
     message = _CONNECT_MESSAGES.get(
         error.code, "Nojoin could not connect to Proton. Try again in a few minutes."
     )
+    if error.code == "provider_rejected" and error.provider_code is not None:
+        # Proton's own code is what a bug report needs; it holds no secret.
+        message = f"{message} Proton's code: {error.provider_code}."
     return ProtonConnectError(error.code, message, details)
 
 
@@ -91,7 +95,13 @@ async def _helper(
     try:
         return await call_helper(op, session=session, args=args, timeout=timeout)
     except HelperError as error:
-        logger.info("Proton connect step %s refused: %s", op, error.code)
+        logger.info(
+            "Proton connect step %s refused: %s (Proton code %s, HTTP %s)",
+            op,
+            error.code,
+            error.provider_code,
+            error.http_status,
+        )
         raise _connect_error(error) from error
 
 
