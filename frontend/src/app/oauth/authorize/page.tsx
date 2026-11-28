@@ -6,6 +6,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import {
+  CalendarDays,
   FileText,
   Link2,
   ListTodo,
@@ -59,6 +60,7 @@ const SCOPE_CAPABILITIES: Record<
     { icon: Search, label: "Search across your meetings and documents" },
     { icon: Users, label: "See meeting speakers and your People library" },
     { icon: Tag, label: "See your tags" },
+    { icon: CalendarDays, label: "See your synced calendars and when you are free" },
   ],
   "mcp:write": [
     {
@@ -77,6 +79,11 @@ const SCOPE_CAPABILITIES: Record<
     },
     { icon: FileText, label: "Attach text documents and append to notes" },
     { icon: UserPlus, label: "Add or update people and name speakers" },
+    {
+      icon: CalendarDays,
+      label:
+        "Create, change and cancel events in calendars Nojoin can write to, answer invitations, and email the people on them when asked",
+    },
   ],
 };
 
@@ -284,10 +291,12 @@ function AuthorizeContent() {
                     </>
                   ) : (
                     <>
-                      Everything {info.client_name} changes with this access
-                      stays recoverable: archived and binned items can be
-                      restored, and transcript edits are tracked. It cannot
-                      permanently delete anything.
+                      In your library, archived and binned items can be
+                      restored and transcript edits are tracked. Calendar
+                      changes happen at your calendar provider: a cancelled
+                      event is removed there, and invitations or replies
+                      reach other people when {info.client_name} asks to
+                      send them.
                     </>
                   )}
                 </p>

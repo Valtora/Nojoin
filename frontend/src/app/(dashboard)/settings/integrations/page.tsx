@@ -1,5 +1,6 @@
 "use client";
 
+import AssistantChangesSettings from "@/components/settings/AssistantChangesSettings";
 import CalendarConnectionsSettings from "@/components/settings/CalendarConnectionsSettings";
 import CalendarProviderSettings from "@/components/settings/CalendarProviderSettings";
 import ConnectedAppsSettings from "@/components/settings/ConnectedAppsSettings";
@@ -13,6 +14,7 @@ export default function IntegrationsSettingsPage() {
   return (
     <SettingsCategoryLayout categoryId="integrations">
       <CalendarConnectionsSettings />
+      <AssistantChangesSettings />
       <ConnectedAppsSettings />
 
       {isAdmin && (

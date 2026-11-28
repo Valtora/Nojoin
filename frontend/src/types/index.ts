@@ -1038,7 +1038,11 @@ export interface LanguageRegistry {
   >;
 }
 
-export type CalendarProvider = "google" | "microsoft";
+/** The providers connected by an OAuth redirect with installation app credentials. */
+export type CalendarOAuthProvider = "google" | "microsoft";
+
+/** Proton signs in with the user's own Proton credentials instead. */
+export type CalendarProvider = CalendarOAuthProvider | "proton";
 
 export type CalendarSyncStatus =
   | "idle"
@@ -1056,7 +1060,7 @@ export type CalendarDashboardState =
   | "no_events";
 
 export interface CalendarProviderStatus {
-  provider: CalendarProvider;
+  provider: CalendarOAuthProvider;
   display_name: string;
   configured: boolean;
   source: string;
@@ -1108,6 +1112,62 @@ export interface CalendarConnection {
 export interface CalendarOverview {
   providers: CalendarProviderAvailability[];
   connections: CalendarConnection[];
+}
+
+/** What the Proton connect modal shows next. */
+export type ProtonConnectStepName = "two_factor" | "mailbox_password" | "done";
+
+export interface ProtonConnectStep {
+  step: ProtonConnectStepName;
+  flow_id?: string | null;
+  connection?: CalendarConnection | null;
+  warnings: string[];
+}
+
+/** A refused Proton sign-in step, as the API's error detail carries it. */
+export interface ProtonConnectRefusal {
+  code: string;
+  message: string;
+  verify_url?: string | null;
+  token?: string | null;
+  methods?: string[];
+}
+
+export interface ProtonCredentials {
+  username: string;
+  password: string;
+}
+
+export interface AssistantChangeEmail {
+  email: string;
+  kind: "invitation" | "update" | "cancellation" | "reply";
+}
+
+/** One row of the change log of what assistants did to the user's calendars. */
+export interface AssistantChange {
+  id: number;
+  created_at: string;
+  completed_at?: string | null;
+  client_name?: string | null;
+  tool: string;
+  action: "create" | "update" | "cancel" | "respond";
+  scope?: "single" | "occurrence" | "series" | null;
+  connection_id?: number | null;
+  provider?: CalendarProvider | null;
+  calendar_name?: string | null;
+  event_title?: string | null;
+  event_start?: string | null;
+  outcome: "pending" | "succeeded" | "failed" | "refused" | "uncertain";
+  error_code?: string | null;
+  emailed: AssistantChangeEmail[];
+  notifications_summary?: string | null;
+}
+
+export interface AssistantChangePage {
+  items: AssistantChange[];
+  total: number;
+  skip: number;
+  limit: number;
 }
 
 export interface CalendarProviderConfigUpdate {

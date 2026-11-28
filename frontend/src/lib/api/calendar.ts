@@ -1,10 +1,13 @@
 import type {
+  AssistantChangePage,
   CalendarConnection,
+  CalendarOAuthProvider,
   CalendarDashboardSummary,
   CalendarOverview,
-  CalendarProvider,
   CalendarProviderConfigUpdate,
   CalendarProviderStatus,
+  ProtonConnectStep,
+  ProtonCredentials,
   RecordingsCalendar,
 } from "@/types";
 import api, { API_BASE_URL } from "./client";
@@ -47,7 +50,7 @@ export const getRecordingsCalendar = async (
 };
 
 export const startCalendarAuthorisation = async (
-  provider: CalendarProvider,
+  provider: CalendarOAuthProvider,
 ): Promise<{ authorisation_url: string }> => {
   const response = await api.post<{ authorisation_url: string }>(
     `/calendar/oauth/${provider}/start`,
@@ -56,7 +59,7 @@ export const startCalendarAuthorisation = async (
 };
 
 export const getCalendarAuthorisationStartUrl = (
-  provider: CalendarProvider,
+  provider: CalendarOAuthProvider,
 ): string => {
   const path = `${API_BASE_URL}/calendar/oauth/${provider}/start`;
   if (typeof window === "undefined") {
@@ -113,12 +116,66 @@ export const getCalendarProviderStatuses = async (): Promise<
 };
 
 export const updateCalendarProviderConfiguration = async (
-  provider: CalendarProvider,
+  provider: CalendarOAuthProvider,
   payload: CalendarProviderConfigUpdate,
 ): Promise<CalendarProviderStatus> => {
   const response = await api.put<CalendarProviderStatus>(
     `/calendar/admin/providers/${provider}`,
     payload,
+  );
+  return response.data;
+};
+
+/** Signs in to Proton. A human check comes back as a 409 refusal. */
+export const connectProton = async (
+  credentials: ProtonCredentials,
+  verification?: { token: string; type: string } | null,
+): Promise<ProtonConnectStep> => {
+  const response = await api.post<ProtonConnectStep>("/calendar/proton/connect", {
+    ...credentials,
+    human_verification_token: verification?.token ?? null,
+    human_verification_type: verification?.type ?? null,
+  });
+  return response.data;
+};
+
+export const connectProtonTwoFactor = async (
+  flowId: string,
+  credentials: ProtonCredentials,
+  code: string,
+): Promise<ProtonConnectStep> => {
+  const response = await api.post<ProtonConnectStep>(
+    `/calendar/proton/connect/${encodeURIComponent(flowId)}/totp`,
+    { ...credentials, code },
+  );
+  return response.data;
+};
+
+export const connectProtonUnlock = async (
+  flowId: string,
+  credentials: ProtonCredentials,
+  mailboxPassword: string,
+): Promise<ProtonConnectStep> => {
+  const response = await api.post<ProtonConnectStep>(
+    `/calendar/proton/connect/${encodeURIComponent(flowId)}/unlock`,
+    { ...credentials, mailbox_password: mailboxPassword },
+  );
+  return response.data;
+};
+
+export const getAssistantChanges = async (options: {
+  connectionId?: number | null;
+  skip?: number;
+  limit?: number;
+} = {}): Promise<AssistantChangePage> => {
+  const params = new URLSearchParams();
+  if (options.connectionId != null) {
+    params.set("connection_id", String(options.connectionId));
+  }
+  params.set("skip", String(options.skip ?? 0));
+  params.set("limit", String(options.limit ?? 20));
+  const response = await api.get<AssistantChangePage>(
+    `/calendar/assistant-changes?${params.toString()}`,
   );
   return response.data;
 };

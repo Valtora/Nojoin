@@ -80,7 +80,7 @@ export default function ConnectedAppsSettings() {
     <SettingsCard
       id="integrations-connected-apps"
       title="Connected apps"
-      description="Assistants connected through the Nojoin MCP connector. They can read your meeting library, and, when write access is granted, change it: correcting transcripts, regenerating notes, re-running processing, organising recordings, managing tasks, attaching documents, and maintaining your People library. Nothing they do is permanent, and edits they make are labelled as theirs in the transcript."
+      description="Assistants connected through the Nojoin MCP connector. They can read your meeting library and calendars, and, when write access is granted, change them: correcting transcripts, regenerating notes, re-running processing, organising recordings, managing tasks, attaching documents, maintaining your People library, and changing events in calendars Nojoin can write to. Library changes can be undone and edits they make are labelled as theirs in the transcript; calendar changes happen at your provider, can email other people when asked, and are listed under Changes made by assistants."
     >
       {apps === null ? (
         <SettingsBlock>
